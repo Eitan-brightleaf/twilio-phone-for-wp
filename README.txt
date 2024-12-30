@@ -47,15 +47,6 @@ e.g.
 1. Activate the plugin through the 'Plugins' menu in WordPress
 1. Place `<?php do_action('plugin_name_hook'); ?>` in your templates
 
-== Frequently Asked Questions ==
-
-= A question that someone might have =
-
-An answer to that question.
-
-= What about foo bar? =
-
-Answer to foo bar dilemma.
 
 == Screenshots ==
 
