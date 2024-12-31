@@ -48,7 +48,7 @@ require plugin_dir_path( __FILE__ ) . '/class-twilio-phone-for-wp.php';
 function run_twilio_phone_for_wp(): void
 {
 
-	$plugin = new Twilio_phone_for_wp();
+	$plugin = new Twilio_Phone_For_WP();
 	$plugin->run();
 
 }
