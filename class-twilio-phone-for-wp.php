@@ -63,6 +63,23 @@ class Twilio_Phone_For_WP {
 	 */
 	protected string $prefix = 'tpfwp';
 
+    /**
+     * Stores the URL for the settings page.
+     *
+     * @var string $settings_url The URL used to navigate to the settings page.
+     */
+    protected string $settings_url;
+
+    /**
+     * Initializes the class instance and sets up the settings URL for the admin page.
+     * The settings URL is generated dynamically based on the specified slug and admin base URL.
+     *
+     * @return void
+     */
+    public function __construct() {
+        $this->settings_url = add_query_arg( 'page', $this->slug, admin_url( 'admin.php' ) );
+    }
+
 
 	/**
 	 * Executes the primary functionality of the class or initiates the process it is designed to manage.
@@ -269,9 +286,11 @@ class Twilio_Phone_For_WP {
 		}
 	}
 
-	/**
-	 * Creates a sub-menu for the plugin in the WordPress admin dashboard.
-	 */
+    /**
+     * Creates a sub-menu for the plugin in the WordPress admin dashboard.
+     *
+     * @throws RandomException Could theoretically throw an exception if encrypting data while rendering one of the pages and a source of randomness isn't found.
+     */
 	public function create_sub_menu(): void {
 
         if ( isset( $_GET['step'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -289,9 +308,6 @@ class Twilio_Phone_For_WP {
 		?>
 
         <!-- <form action="" method="post" class="twilio-phone-for-wp-form">
-            <a target="_blank" href="https://www.twilio.com/console/voice/settings/api-keys">Twilio console > Voice > Settings > API Keys</a>
-            <input type="password" name="api_key_sid" placeholder="API Key SID" required>
-            <input type="password" name="api_key_secret" placeholder="API Key Secret" required>
             <a target="_blank" href="https://www.twilio.com/console/voice/twiml/apps">Twilio account Console > Voice > TwiML > TwiML Apps</a>
             <input type="password" name="app_sid" placeholder="App SID" required>
             <input type="text" name="phone_number" placeholder="Phone Number" required>
@@ -309,7 +325,7 @@ class Twilio_Phone_For_WP {
      * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
      */
     private function render_step_one(): void {
-        $settings_url    = add_query_arg( 'page', $this->slug, admin_url( 'admin.php' ) );
+        $settings_url    = $this->settings_url;
         $account_sid_pic = plugins_url( '/images/account-sid.png', __FILE__ );
         $nonce           = wp_create_nonce( 'twilio_phone_setup_part_one' );
 
@@ -320,16 +336,17 @@ class Twilio_Phone_For_WP {
             $sid = sanitize_text_field( wp_unslash( $_POST['account_sid'] ) );
 
             if ( ! $this::decrypt( $sid ) ) {
-                $sid = $this::encrypt( $sid );
-                update_option( 'twilio_connect_info', [ 'sid' => $sid ] );
+                $sid          = $this::encrypt( $sid );
+                $connect_info = get_option( 'twilio_connect_info' );
+                if ( ! is_array( $connect_info ) ) {
+                    $connect_info = [];
+                }
+                $connect_info['sid'] = $sid;
+                update_option( 'twilio_connect_info', $connect_info );
             }
         }
         $connect_info = get_option( 'twilio_connect_info' );
-        if ( ! empty( $connect_info['sid'] ) ) {
-            $sid = $connect_info['sid'];
-        } else {
-			$sid = '';
-        }
+        $sid          = $connect_info['sid'] ?? '';
         ?>
         <h1>Twilio Account SID</h1>
         <nav class="nav-bar">
@@ -439,5 +456,71 @@ class Twilio_Phone_For_WP {
         }
 
         return $decrypted_value;
+    }
+
+    /**
+     * @throws RandomException
+     */
+    private function render_step_two() {
+        $settings_url = $this->settings_url;
+        $nonce        = wp_create_nonce( 'twilio_phone_setup_part_two' );
+
+        $create_api_button_pic   = plugins_url( '/images/create-api-key-button.png', __FILE__ );
+        $create_new_api_key_pic  = plugins_url( '/images/create-new-api-key.png', __FILE__ );
+        $api_key_credentials_pic = plugins_url( '/images/api-key-credentials.png', __FILE__ );
+
+        if ( isset( $_POST['twilio-setup-step-two'] ) && 'save' === $_POST['twilio-setup-step-two'] && isset( $_POST['twilio-setup-pt-two-nonce'] ) &&
+            wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-two-nonce'] ) ), 'twilio_phone_setup_part_two' ) &&
+            ! empty( $_POST['api_key_sid'] ) && ! empty( $_POST['api_key_secret'] ) ) {
+
+            $api_key_sid    = sanitize_text_field( wp_unslash( $_POST['api_key_sid'] ) );
+            $api_key_secret = sanitize_text_field( wp_unslash( $_POST['api_key_secret'] ) );
+
+            $connect_info = get_option( 'twilio_connect_info' );
+            if ( ! is_array( $connect_info ) ) {
+                $connect_info = [];
+            }
+
+            if ( ! $this::decrypt( $api_key_sid ) ) {
+                $api_key_sid                 = $this::encrypt( $api_key_sid );
+                $connect_info['api_key_sid'] = $api_key_sid;
+            }
+            if ( ! $this::decrypt( $api_key_secret ) ) {
+                $api_key_secret                 = $this::encrypt( $api_key_secret );
+                $connect_info['api_key_secret'] = $api_key_secret;
+            }
+            update_option( 'twilio_connect_info', $connect_info );
+        }
+
+        $connect_info   = get_option( 'twilio_connect_info' );
+        $api_key_sid    = $connect_info['api_key_sid'] ?? '';
+        $api_key_secret = $connect_info['api_key_secret'] ?? '';
+
+        ?>
+        <h1>Enter API Info</h1>
+        <nav class="nav-bar">
+            <a href="<?php echo esc_url( $settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+            <a href="<?php echo esc_url( $settings_url ); ?>&step=2" class="active-link">Step 2-Enter API Info</a>
+        </nav>
+        <p class="twilio-setup-instructions">
+            Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/settings/api-keys">Twilio console > Voice > Settings > API Keys</a>.
+            Click the “Create API Key” button. Enter a name for the friendly name field (such as "Twilio WordPress plugin").
+            Leave the “Key Type” as “Standard”. Click the “Create” button to create the API key.
+            Please realise the API key secret is only shown once, so make sure you copy it down somewhere safe. Then enter the API key SID and secret below.
+        </p>
+        <div class="twilio-setup-images">
+            <img src="<?php echo esc_url( $create_api_button_pic ); ?>" alt="Create API Button" class="twilio-setup-pic">
+            <img src="<?php echo esc_url( $create_new_api_key_pic ); ?>" alt="Create New API Key" class="twilio-setup-pic">
+            <img src="<?php echo esc_url( $api_key_credentials_pic ); ?>" alt="API Key Credentials" class="twilio-setup-pic">
+        </div>
+        <form action="" method="post" class="twilio-setup-form">
+            <input type="hidden" name="twilio-setup-pt-two-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+            <input type="password" name="api_key_sid" value="<?php echo esc_attr( $api_key_sid ); ?>" placeholder="API Key SID" required class="twilio-setup-input">
+            <input type="password" name="api_key_secret" value="<?php echo esc_attr( $api_key_secret ); ?>" placeholder="API Key Secret" required class="twilio-setup-input">
+            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-two" value="save">Save</button>
+        </form>
+        <a href="<?php echo esc_url( $settings_url ); ?>&step=1" class="button">Back</a>
+        <a href="<?php echo esc_url( $settings_url ); ?>&step=3" class="button">Next</a>
+        <?php
     }
 }

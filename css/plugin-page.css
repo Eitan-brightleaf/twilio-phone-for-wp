@@ -13,15 +13,21 @@
     text-decoration: underline;
     color: #0056b3;
 }
-.twilio-setup-pic {
-    display: block;
-    max-width: 35%;
-    height: auto;
-    margin: 10px 0;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.twilio-setup-images {
+    display: flex; /* Align images side by side */
+    align-items: center; /* Aligns images to the same height */
+    gap: 5px; /* Adds space between images */
+    flex-wrap: wrap; /* Allows wrapping if there isn't enough space */
 }
+
+.twilio-setup-pic {
+    max-width: 30%; /* Sets a consistent width for all images */
+    height: auto; /* Maintains aspect ratio */
+    border: 1px solid #ccc; /* Adds a border */
+    border-radius: 4px; /* Smooth corners */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+}
+
 .twilio-setup-input {
     display: block;
     width: 100%;
@@ -54,7 +60,7 @@
     text-transform: uppercase; /* Converts text to uppercase */
     text-align: center; /* Ensures text is centered */
     display: inline-block; /* Keeps it inline */
-    margin-right: 20px; /* Adds space between this button and the link */
+    margin-bottom: 20px; /* Adds space between this button and the link */
 }
 
 .twilio-setup-button.button:hover {
@@ -84,4 +90,7 @@ a.button:hover {
 .twilio-setup-button.button,
 a.button {
     margin-top: 10px; /* Add spacing if they appear stacked */
+}
+.nav-bar .active-link {
+    color: #4fbd51;
 }
