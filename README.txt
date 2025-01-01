@@ -33,6 +33,3 @@ for displaying information about the plugin.  In this situation, the only thing 
 is the stable tag pointer.  Thus, if you develop in trunk, you can update the trunk `readme.txt` to reflect changes in
 your in-development version, without having that information incorrectly disclosed about the current stable version
 that lacks those changes -- as long as the trunk's `readme.txt` points to the correct stable tag.
-
-    If no stable tag is provided, it is assumed that trunk is stable, but you should specify "trunk" if that's where
-you put the stable version, in order to eliminate any doubt.

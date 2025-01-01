@@ -12,6 +12,8 @@
  * @subpackage Twilio_phone_for_wp/includes
  */
 
+use Random\RandomException;
+
 /**
  * The core plugin class.
  *
@@ -272,17 +274,170 @@ class Twilio_Phone_For_WP {
 	 */
 	public function create_sub_menu(): void {
 
+        if ( isset( $_GET['step'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $step = sanitize_key( $_GET['step'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        } else {
+            $step = '1'; // $this->determine_step();
+        }
+        match ( $step ) {
+            '1' => $this->render_step_one(),
+            '2' => $this->render_step_two(),
+            '3' => $this->render_step_three(),
+            '4' => $this->render_step_four(),
+        };
+
 		?>
 
-        <form action="" method="post" class="twilio-phone-for-wp-form">
-            <input type="password" name="account_sid" placeholder="Account SID" required>
+        <!-- <form action="" method="post" class="twilio-phone-for-wp-form">
+            <a target="_blank" href="https://www.twilio.com/console/voice/settings/api-keys">Twilio console > Voice > Settings > API Keys</a>
             <input type="password" name="api_key_sid" placeholder="API Key SID" required>
             <input type="password" name="api_key_secret" placeholder="API Key Secret" required>
+            <a target="_blank" href="https://www.twilio.com/console/voice/twiml/apps">Twilio account Console > Voice > TwiML > TwiML Apps</a>
             <input type="password" name="app_sid" placeholder="App SID" required>
             <input type="text" name="phone_number" placeholder="Phone Number" required>
             <input type="submit" value="Save">
-        </form>
+        </form>-->
 
 		<?php
 	}
+
+    /**
+     * Renders the interface for Step One of the setup process, guiding the user to retrieve
+     * and input their Twilio Account SID.
+     *
+     * @return void
+     * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
+     */
+    private function render_step_one(): void {
+        $settings_url    = add_query_arg( 'page', $this->slug, admin_url( 'admin.php' ) );
+        $account_sid_pic = plugins_url( '/images/account-sid.png', __FILE__ );
+        $nonce           = wp_create_nonce( 'twilio_phone_setup_part_one' );
+
+        if ( isset( $_POST['twilio-setup-step-one'] ) && 'save' === $_POST['twilio-setup-step-one'] && isset( $_POST['twilio-setup-pt-one-nonce'] ) &&
+            wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-one-nonce'] ) ), 'twilio_phone_setup_part_one' ) &&
+            ! empty( $_POST['account_sid'] ) ) {
+
+            $sid = sanitize_text_field( wp_unslash( $_POST['account_sid'] ) );
+
+            if ( ! $this::decrypt( $sid ) ) {
+                $sid = $this::encrypt( $sid );
+                update_option( 'twilio_connect_info', [ 'sid' => $sid ] );
+            }
+        }
+        $connect_info = get_option( 'twilio_connect_info' );
+        if ( ! empty( $connect_info['sid'] ) ) {
+            $sid = $connect_info['sid'];
+        } else {
+			$sid = '';
+        }
+        ?>
+        <h1>Twilio Account SID</h1>
+        <nav class="nav-bar">
+            <a href="<?php echo esc_url( $settings_url ); ?>&step=1" class="active-link">Step 1-Get Account SID</a> |
+            <a href="<?php echo esc_url( $settings_url ); ?>&step=2">Step 2-Enter API Info</a>
+        </nav>
+        <p class="twilio-setup-instructions">
+            Go to the <a target="_blank" href="https://www.twilio.com/console">Twilio Console Home Page</a> and copy your Account SID here.
+            You can find it on the bottom of the page in the "Account Info" section.
+        </p>
+        <img src="<?php echo esc_url( $account_sid_pic ); ?>" alt="Twilio Account SID" class="twilio-setup-pic">
+        <form action="" method="post" class="twilio-setup-form">
+            <input type="hidden" name="twilio-setup-pt-one-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+            <input type="password" name="account_sid" placeholder="Account SID" value="<?php echo esc_attr( $sid ); ?>" required class="twilio-setup-input">
+            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-one" value="save">Save</button>
+        </form>
+        <a href="<?php echo esc_url( $settings_url ); ?>&step=2" class="button">Next</a>
+        <?php
+    }
+
+    /**
+     * Encrypts the provided data using AES-256-CTR encryption or a fallback method.
+     * If the OpenSSL extension is available, it generates a secure encryption key,
+     * nonce, and MAC to ensure data integrity. Otherwise, it falls back to a database-based encryption method.
+     *
+     * @param string $data The data to encrypt.
+     *
+     * @return string|false The encrypted data as a base64-encoded string, or false if encryption fails.
+     * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
+     */
+    public static function encrypt( string $data ): false|string {
+
+        if ( function_exists( 'openssl_encrypt' ) ) {
+            $salt           = wp_salt( 'nonce' ); // Generate a secure salt for encryption.
+            $encryption_key = 'bl_digital_encryption_key' . $salt; // Create the encryption key.
+            $mac_key        = 'bl_digital_encryption_mac' . $salt; // Create the MAC key.
+
+            $nonce = random_bytes( 16 ); // Generate a secure nonce (IV).
+
+            $options     = OPENSSL_RAW_DATA;
+            $cipher_name = 'aes-256-ctr'; // Specify the encryption cipher.
+
+            $ciphertext = openssl_encrypt( $data, $cipher_name, $encryption_key, $options, $nonce );
+
+            if ( false === $ciphertext ) {
+                return false; // Return false if encryption fails.
+            }
+
+            // Generate a MAC for integrity verification.
+            $mac = hash_hmac( 'sha512', $nonce . $ciphertext, $mac_key, true );
+
+            // Combine the MAC, nonce, and ciphertext into a single encoded string.
+            $encrypted_value = base64_encode( $mac . $nonce . $ciphertext ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+        } else {
+            // Fallback logic if OpenSSL is not available.
+            $encrypted_value = EncryptDB::encrypt( $data, wp_salt( 'nonce' ) );
+        }
+        return $encrypted_value;
+    }
+
+    /**
+     * Decrypts a given encrypted data string using OpenSSL or a fallback mechanism.
+     *
+     * The method first decodes the Base64-encoded input, extracts the MAC,
+     * the nonce (IV), and the ciphertext. It verifies the integrity of the data
+     * using HMAC before decrypting the ciphertext using the aes-256-ctr cipher.
+     * If OpenSSL is unavailable, a fallback decryption method is used.
+     *
+     * @param string $data The Base64-encoded encrypted data string to decrypt.
+     * @return false|string Returns the decrypted string on success, or false on failure (e.g., data corruption or invalid input).
+     */
+    public static function decrypt( string $data ): false|string {
+
+        if ( function_exists( 'openssl_encrypt' ) ) {
+            // Decode the encrypted data from base64.
+            $data_decoded = base64_decode( $data, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+
+            if ( false === $data_decoded ) {
+                return false; // If base64 decoding fails, return false.
+            }
+
+            $mac        = substr( $data_decoded, 0, 64 ); // Extract the MAC from the combined string.
+            $nonce      = substr( $data_decoded, 64, 16 ); // Extract the nonce (IV) from the combined string.
+            $ciphertext = substr( $data_decoded, 80 ); // Extract the ciphertext from the combined string.
+
+            $salt           = wp_salt( 'nonce' ); // Generate the same secure salt for encryption.
+            $encryption_key = 'bl_digital_encryption_key' . $salt; // Create the encryption key.
+            $mac_key        = 'bl_digital_encryption_mac' . $salt; // Create the MAC key.
+
+            // Generate a MAC for integrity verification.
+            $mac_check = hash_hmac( 'sha512', $nonce . $ciphertext, $mac_key, true );
+
+            // Compare the provided MAC with the generated MAC.
+            if ( ! hash_equals( $mac, $mac_check ) ) {
+                return false; // Return false if MAC verification fails.
+            }
+
+            $options     = OPENSSL_RAW_DATA;
+            $cipher_name = 'aes-256-ctr'; // Specify the encryption cipher.
+
+            // Decrypt the ciphertext.
+            $decrypted_value = openssl_decrypt( $ciphertext, $cipher_name, $encryption_key, $options, $nonce );
+
+        } else {
+            // Fallback logic if OpenSSL is not available.
+            $decrypted_value = EncryptDB::decrypt( $data, wp_salt( 'nonce' ) );
+        }
+
+        return $decrypted_value;
+    }
 }
