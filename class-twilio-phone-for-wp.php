@@ -14,6 +14,10 @@
 
 use Random\RandomException;
 
+if ( ! defined( 'ABSPATH' ) ) {
+	die;
+}
+
 /**
  * The core plugin class.
  *
