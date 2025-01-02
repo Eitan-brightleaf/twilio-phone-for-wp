@@ -593,9 +593,15 @@ class Twilio_Phone_For_WP {
 	}
 
 	/**
-	 * @throws RandomException
+	 * Renders the fourth step of the Twilio phone number setup process.
+	 *
+	 * This step allows users to input their Twilio phone number in E.164 format
+	 * and saves it to the Twilio connection settings if the form is correctly submitted
+	 * and validated through a nonce.
+	 *
+	 * @return void
 	 */
-	private function render_step_four() {
+	private function render_step_four(): void {
         $nonce = wp_create_nonce( 'twilio_phone_setup_part_four' );
 
         if ( isset( $_POST['twilio-setup-step-four'] ) && 'save' === $_POST['twilio-setup-step-four'] && isset( $_POST['twilio-setup-pt-four-nonce'] ) &&
