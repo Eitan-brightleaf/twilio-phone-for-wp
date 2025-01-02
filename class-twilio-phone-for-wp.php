@@ -387,7 +387,7 @@ class Twilio_Phone_For_WP {
         if ( isset( $_GET['step'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $step = sanitize_key( $_GET['step'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         } else {
-            $step = '1'; // $this->determine_step();
+            $step = '1';
         }
         match ( $step ) {
             '1' => $this->render_step_one(),
@@ -395,17 +395,6 @@ class Twilio_Phone_For_WP {
             '3' => $this->render_step_three(),
             '4' => $this->render_step_four(),
         };
-
-		?>
-
-        <!-- <form action="" method="post" class="twilio-phone-for-wp-form">
-            <a target="_blank" href="https://www.twilio.com/console/voice/twiml/apps">Twilio account Console > Voice > TwiML > TwiML Apps</a>
-            <input type="password" name="app_sid" placeholder="App SID" required>
-            <input type="text" name="phone_number" placeholder="Phone Number" required>
-            <input type="submit" value="Save">
-        </form>-->
-
-		<?php
 	}
 
     /**
@@ -442,7 +431,9 @@ class Twilio_Phone_For_WP {
         <h1>Twilio Account SID</h1>
         <nav class="nav-bar">
             <a href="<?php echo esc_url( $settings_url ); ?>&step=1" class="active-link">Step 1-Get Account SID</a> |
-            <a href="<?php echo esc_url( $settings_url ); ?>&step=2">Step 2-Enter API Info</a>
+            <a href="<?php echo esc_url( $settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
         </nav>
         <p class="twilio-setup-instructions">
             Go to the <a target="_blank" href="https://www.twilio.com/console">Twilio Console Home Page</a> and copy your Account SID here.
@@ -458,97 +449,6 @@ class Twilio_Phone_For_WP {
         <?php
     }
 
-    /**
-     * Encrypts the provided data using AES-256-CTR encryption or a fallback method.
-     * If the OpenSSL extension is available, it generates a secure encryption key,
-     * nonce, and MAC to ensure data integrity. Otherwise, it falls back to a database-based encryption method.
-     *
-     * @param string $data The data to encrypt.
-     *
-     * @return string|false The encrypted data as a base64-encoded string, or false if encryption fails.
-     * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
-     */
-    public static function encrypt( string $data ): false|string {
-
-        if ( function_exists( 'openssl_encrypt' ) ) {
-            $salt           = wp_salt( 'nonce' ); // Generate a secure salt for encryption.
-            $encryption_key = 'bl_digital_encryption_key' . $salt; // Create the encryption key.
-            $mac_key        = 'bl_digital_encryption_mac' . $salt; // Create the MAC key.
-
-            $nonce = random_bytes( 16 ); // Generate a secure nonce (IV).
-
-            $options     = OPENSSL_RAW_DATA;
-            $cipher_name = 'aes-256-ctr'; // Specify the encryption cipher.
-
-            $ciphertext = openssl_encrypt( $data, $cipher_name, $encryption_key, $options, $nonce );
-
-            if ( false === $ciphertext ) {
-                return false; // Return false if encryption fails.
-            }
-
-            // Generate a MAC for integrity verification.
-            $mac = hash_hmac( 'sha512', $nonce . $ciphertext, $mac_key, true );
-
-            // Combine the MAC, nonce, and ciphertext into a single encoded string.
-            $encrypted_value = base64_encode( $mac . $nonce . $ciphertext ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
-        } else {
-            // Fallback logic if OpenSSL is not available.
-            $encrypted_value = EncryptDB::encrypt( $data, wp_salt( 'nonce' ) );
-        }
-        return $encrypted_value;
-    }
-
-    /**
-     * Decrypts a given encrypted data string using OpenSSL or a fallback mechanism.
-     *
-     * The method first decodes the Base64-encoded input, extracts the MAC,
-     * the nonce (IV), and the ciphertext. It verifies the integrity of the data
-     * using HMAC before decrypting the ciphertext using the aes-256-ctr cipher.
-     * If OpenSSL is unavailable, a fallback decryption method is used.
-     *
-     * @param string $data The Base64-encoded encrypted data string to decrypt.
-     * @return false|string Returns the decrypted string on success, or false on failure (e.g., data corruption or invalid input).
-     */
-    public static function decrypt( string $data ): false|string {
-
-        if ( function_exists( 'openssl_encrypt' ) ) {
-            // Decode the encrypted data from base64.
-            $data_decoded = base64_decode( $data, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
-
-            if ( false === $data_decoded ) {
-                return false; // If base64 decoding fails, return false.
-            }
-
-            $mac        = substr( $data_decoded, 0, 64 ); // Extract the MAC from the combined string.
-            $nonce      = substr( $data_decoded, 64, 16 ); // Extract the nonce (IV) from the combined string.
-            $ciphertext = substr( $data_decoded, 80 ); // Extract the ciphertext from the combined string.
-
-            $salt           = wp_salt( 'nonce' ); // Generate the same secure salt for encryption.
-            $encryption_key = 'bl_digital_encryption_key' . $salt; // Create the encryption key.
-            $mac_key        = 'bl_digital_encryption_mac' . $salt; // Create the MAC key.
-
-            // Generate a MAC for integrity verification.
-            $mac_check = hash_hmac( 'sha512', $nonce . $ciphertext, $mac_key, true );
-
-            // Compare the provided MAC with the generated MAC.
-            if ( ! hash_equals( $mac, $mac_check ) ) {
-                return false; // Return false if MAC verification fails.
-            }
-
-            $options     = OPENSSL_RAW_DATA;
-            $cipher_name = 'aes-256-ctr'; // Specify the encryption cipher.
-
-            // Decrypt the ciphertext.
-            $decrypted_value = openssl_decrypt( $ciphertext, $cipher_name, $encryption_key, $options, $nonce );
-
-        } else {
-            // Fallback logic if OpenSSL is not available.
-            $decrypted_value = EncryptDB::decrypt( $data, wp_salt( 'nonce' ) );
-        }
-
-        return $decrypted_value;
-    }
-
 	/**
 	 * Renders the second step of the Twilio API setup process.
 	 * This method generates a nonce for security, validates form submissions, and processes the provided API Key SID
@@ -560,8 +460,7 @@ class Twilio_Phone_For_WP {
 	 * @throws RandomException Can theoretically throw an exception if source of randomness is not found while encrypting the credentials.
 	 */
     private function render_step_two(): void {
-        $settings_url = $this->settings_url;
-        $nonce        = wp_create_nonce( 'twilio_phone_setup_part_two' );
+        $nonce = wp_create_nonce( 'twilio_phone_setup_part_two' );
 
         $create_api_button_pic   = plugins_url( '/images/create-api-key-button.png', __FILE__ );
         $create_new_api_key_pic  = plugins_url( '/images/create-new-api-key.png', __FILE__ );
@@ -597,8 +496,10 @@ class Twilio_Phone_For_WP {
         ?>
         <h1>Enter API Info</h1>
         <nav class="nav-bar">
-            <a href="<?php echo esc_url( $settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
-            <a href="<?php echo esc_url( $settings_url ); ?>&step=2" class="active-link">Step 2-Enter API Info</a>
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="active-link">Step 2-Enter API Info</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
         </nav>
         <p class="twilio-setup-instructions">
             Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/settings/api-keys">Twilio console > Voice > Settings > API Keys</a>.
@@ -617,11 +518,123 @@ class Twilio_Phone_For_WP {
             <input type="password" name="api_key_secret" value="<?php echo esc_attr( $api_key_secret ); ?>" placeholder="API Key Secret" required class="twilio-setup-input">
             <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-two" value="save">Save</button>
         </form>
-        <a href="<?php echo esc_url( $settings_url ); ?>&step=1" class="button">Back</a>
-        <a href="<?php echo esc_url( $settings_url ); ?>&step=3" class="button">Next</a>
+        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1" class="button">Back</a>
+        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="button">Next</a>
         <?php
     }
 
-	private function render_step_three() {
+	/**
+	 * Renders the third step of the Twilio setup process in the plugin settings.
+	 *
+	 * This step allows the user to navigate to the Twilio console, create a TwiML App,
+	 * and input its SID into the field provided. The submitted SID is sanitized, validated,
+	 * and encrypted before being saved to the database.
+	 * Additionally, navigation links for other setup steps and instructional visuals are included.
+	 *
+	 * @return void
+	 * @throws RandomException Can theoretically throw an exception if source of randomness is not found while encrypting the credentials.
+     */
+	private function render_step_three(): void {
+		$nonce = wp_create_nonce( 'twilio_phone_setup_part_three' );
+
+		$create_twimil_app_button_pic = plugins_url( '/images/create-twiml-app-button.png', __FILE__ );
+        $create_new_twiml_app_pic     = plugins_url( '/images/create-twiml-app.png', __FILE__ );
+        $twiml_app_sid_pic            = plugins_url( '/images/twiml-app-sid.png', __FILE__ );
+
+		if ( isset( $_POST['twilio-setup-step-three'] ) && 'save' === $_POST['twilio-setup-step-three'] && isset( $_POST['twilio-setup-pt-three-nonce'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-three-nonce'] ) ), 'twilio_phone_setup_part_three' ) &&
+			! empty( $_POST['app-SID'] ) ) {
+			$app_sid = sanitize_text_field( wp_unslash( $_POST['app-SID'] ) );
+
+			if ( ! $this::decrypt( $app_sid ) ) {
+				$app_sid      = $this::encrypt( $app_sid );
+				$connect_info = get_option( 'twilio_connect_info' );
+				if ( ! is_array( $connect_info ) ) {
+					$connect_info = [];
+				}
+				$connect_info['sid'] = $app_sid;
+				update_option( 'twilio_connect_info', $connect_info );
+			}
+		}
+		$connect_info = get_option( 'twilio_connect_info' );
+		$app_sid      = $connect_info['sid'] ?? '';
+
+        ?>
+        <h1>Enter App SID</h1>
+        <nav class="nav-bar">
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="active-link">Step 3-Enter App SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
+        </nav>
+        <p class="twilio-setup-instructions">
+            Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/twiml/apps">Twilio account Console > Voice > TwiML > TwiML Apps</a>.
+            Click on the “Create new TwiML App” button. Enter a name for the friendly name field (such as "Twilio WordPress plugin").
+            Copy the following link into the Voice Configuration Request URL. <!--TODO--> Leave the other fields empty for now.
+            Click the “Create” button to create the TwiML application. You will be redirected back to the TwiML Apps dashboard.
+            Click on the TwiML App you just created. On the page for this app, select the SID value and copy it into the field below.
+        </p>
+
+        <div class="twilio-setup-images">
+            <img src="<?php echo esc_url( $create_twimil_app_button_pic ); ?>" alt="Create Twiml App Button" class="twilio-setup-pic">
+            <img src="<?php echo esc_url( $create_new_twiml_app_pic ); ?>" alt="Create New Twiml App" class="twilio-setup-pic">
+            <img src="<?php echo esc_url( $twiml_app_sid_pic ); ?>" alt="Twiml App SID" class="twilio-setup-pic">
+        </div>
+
+        <form action="" method="post" class="twilio-setup-form">
+            <input type="hidden" name="twilio-setup-pt-three-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+            <input type="password" name="app-SID" value="<?php echo esc_attr( $app_sid ); ?>" placeholder="App SID" required class="twilio-setup-input">
+            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-three" value="save">Save</button>
+        </form>
+
+        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="button">Back</a>
+        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4" class="button">Next</a>
+        <?php
+	}
+
+	/**
+	 * @throws RandomException
+	 */
+	private function render_step_four() {
+        $nonce = wp_create_nonce( 'twilio_phone_setup_part_four' );
+
+        if ( isset( $_POST['twilio-setup-step-four'] ) && 'save' === $_POST['twilio-setup-step-four'] && isset( $_POST['twilio-setup-pt-four-nonce'] ) &&
+            wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-four-nonce'] ) ), 'twilio_phone_setup_part_four' ) &&
+            ! empty( $_POST['phone-number'] ) ) {
+            $phone_number = sanitize_text_field( wp_unslash( $_POST['phone-number'] ) );
+
+	        $connect_info = get_option( 'twilio_connect_info' );
+	        if ( ! is_array( $connect_info ) ) {
+		        $connect_info = [];
+	        }
+	        $connect_info['phone_number'] = $phone_number;
+	        update_option( 'twilio_connect_info', $connect_info );
+		}
+
+        $connect_info = get_option( 'twilio_connect_info' );
+        $phone_number = $connect_info['phone_number'] ?? '';
+        ?>
+        <h1>Enter Twilio Phone Number</h1>
+        <nav class="nav-bar">
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
+            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4" class="active-link">Step 4-Enter Phone Number</a>
+        </nav>
+        <p class="twilio-setup-instructions">
+            Go to your <a target="_blank" href="https://www.twilio.com/console/phone-numbers/incoming">Twilio account console > Phone Numbers > Manage Numbers > Active Numbers</a>.
+            Select the number you want to use for this plugin. Copy the phone number and paste it into the field below removing spaces but leaving the + sign,
+            ensuring the number is in <a target="_blank" href="https://www.twilio.com/docs/glossary/what-e164">E.164</a> format. <!--TODO configure #-->
+        </p>
+        <div class="twilio-setup-images">
+
+        </div>
+        <form action="" method="post" class="twilio-setup-form">
+            <input type="hidden" name="twilio-setup-pt-four-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+            <input type="tel" pattern="^\+[1-9]\d{1,14}$" name="phone-number" value="<?php echo esc_attr( $phone_number ); ?>" placeholder="+1234567890" required class="twilio-setup-input">
+            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-four" value="save">Save</button>
+        </form>
+        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="button">Back</a>
+        <?php
 	}
 }
