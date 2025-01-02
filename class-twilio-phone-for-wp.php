@@ -124,6 +124,97 @@ class Twilio_Phone_For_WP {
 	}
 
 	/**
+	 * Encrypts the provided data using AES-256-CTR encryption or a fallback method.
+	 * If the OpenSSL extension is available, it generates a secure encryption key,
+	 * nonce, and MAC to ensure data integrity. Otherwise, it falls back to a database-based encryption method.
+	 *
+	 * @param string $data The data to encrypt.
+	 *
+	 * @return string|false The encrypted data as a base64-encoded string, or false if encryption fails.
+	 * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
+	 */
+	public static function encrypt( string $data ): false|string {
+
+		if ( function_exists( 'openssl_encrypt' ) ) {
+			$salt           = wp_salt( 'nonce' ); // Generate a secure salt for encryption.
+			$encryption_key = 'bl_digital_encryption_key' . $salt; // Create the encryption key.
+			$mac_key        = 'bl_digital_encryption_mac' . $salt; // Create the MAC key.
+
+			$nonce = random_bytes( 16 ); // Generate a secure nonce (IV).
+
+			$options     = OPENSSL_RAW_DATA;
+			$cipher_name = 'aes-256-ctr'; // Specify the encryption cipher.
+
+			$ciphertext = openssl_encrypt( $data, $cipher_name, $encryption_key, $options, $nonce );
+
+			if ( false === $ciphertext ) {
+				return false; // Return false if encryption fails.
+			}
+
+			// Generate a MAC for integrity verification.
+			$mac = hash_hmac( 'sha512', $nonce . $ciphertext, $mac_key, true );
+
+			// Combine the MAC, nonce, and ciphertext into a single encoded string.
+			$encrypted_value = base64_encode( $mac . $nonce . $ciphertext ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+		} else {
+			// Fallback logic if OpenSSL is not available.
+			$encrypted_value = EncryptDB::encrypt( $data, wp_salt( 'nonce' ) );
+		}
+		return $encrypted_value;
+	}
+
+	/**
+	 * Decrypts a given encrypted data string using OpenSSL or a fallback mechanism.
+	 *
+	 * The method first decodes the Base64-encoded input, extracts the MAC,
+	 * the nonce (IV), and the ciphertext. It verifies the integrity of the data
+	 * using HMAC before decrypting the ciphertext using the aes-256-ctr cipher.
+	 * If OpenSSL is unavailable, a fallback decryption method is used.
+	 *
+	 * @param string $data The Base64-encoded encrypted data string to decrypt.
+	 * @return false|string Returns the decrypted string on success, or false on failure (e.g., data corruption or invalid input).
+	 */
+	public static function decrypt( string $data ): false|string {
+
+		if ( function_exists( 'openssl_encrypt' ) ) {
+			// Decode the encrypted data from base64.
+			$data_decoded = base64_decode( $data, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+
+			if ( false === $data_decoded ) {
+				return false; // If base64 decoding fails, return false.
+			}
+
+			$mac        = substr( $data_decoded, 0, 64 ); // Extract the MAC from the combined string.
+			$nonce      = substr( $data_decoded, 64, 16 ); // Extract the nonce (IV) from the combined string.
+			$ciphertext = substr( $data_decoded, 80 ); // Extract the ciphertext from the combined string.
+
+			$salt           = wp_salt( 'nonce' ); // Generate the same secure salt for encryption.
+			$encryption_key = 'bl_digital_encryption_key' . $salt; // Create the encryption key.
+			$mac_key        = 'bl_digital_encryption_mac' . $salt; // Create the MAC key.
+
+			// Generate a MAC for integrity verification.
+			$mac_check = hash_hmac( 'sha512', $nonce . $ciphertext, $mac_key, true );
+
+			// Compare the provided MAC with the generated MAC.
+			if ( ! hash_equals( $mac, $mac_check ) ) {
+				return false; // Return false if MAC verification fails.
+			}
+
+			$options     = OPENSSL_RAW_DATA;
+			$cipher_name = 'aes-256-ctr'; // Specify the encryption cipher.
+
+			// Decrypt the ciphertext.
+			$decrypted_value = openssl_decrypt( $ciphertext, $cipher_name, $encryption_key, $options, $nonce );
+
+		} else {
+			// Fallback logic if OpenSSL is not available.
+			$decrypted_value = EncryptDB::decrypt( $data, wp_salt( 'nonce' ) );
+		}
+
+		return $decrypted_value;
+	}
+
+	/**
 	 * Enqueues styles for the plugin's admin page by registering and conditionally loading the plugin page CSS.
 	 * The style is registered with a version based on the file's last modification time for cache busting.
 	 * The style is enqueued only if the current admin page matches the plugin's slug.
@@ -458,10 +549,17 @@ class Twilio_Phone_For_WP {
         return $decrypted_value;
     }
 
-    /**
-     * @throws RandomException
-     */
-    private function render_step_two() {
+	/**
+	 * Renders the second step of the Twilio API setup process.
+	 * This method generates a nonce for security, validates form submissions, and processes the provided API Key SID
+	 * and Secret. Submitted data is encrypted and stored in the database if validation succeeds.
+	 * Additionally, it displays instructional text and images to guide the user on how to obtain API Key credentials
+	 * from the Twilio console.
+	 *
+	 * @return void This method does not return a value.
+	 * @throws RandomException Can theoretically throw an exception if source of randomness is not found while encrypting the credentials.
+	 */
+    private function render_step_two(): void {
         $settings_url = $this->settings_url;
         $nonce        = wp_create_nonce( 'twilio_phone_setup_part_two' );
 
@@ -523,4 +621,7 @@ class Twilio_Phone_For_WP {
         <a href="<?php echo esc_url( $settings_url ); ?>&step=3" class="button">Next</a>
         <?php
     }
+
+	private function render_step_three() {
+	}
 }
