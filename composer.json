@@ -1,0 +1,36 @@
+{
+  "require": {
+    "twilio/sdk": "8.3.9"
+  },
+  "extra": {
+    "strauss" : {
+      "target_directory": "vendor",
+      "namespace_prefix": "BrightleafDigital\\TwilioPhoneForWordPress\\",
+      "classmap_prefix": "Brightleaf_Digital_Twilio_Phone_For_WordPress_",
+      "delete_vendor_files": true,
+      "override_autoload": {
+        "twilio/sdk": {
+          "classmap": ["."]
+        }
+      }
+    }
+  },
+  "autoload": {
+    "classmap": [
+      "vendor/"
+    ]
+  },
+  "scripts": {
+    "prefix-namespaces": [
+      "if not exist bin\\strauss.phar curl -o bin\\strauss.phar -L https://github.com/BrianHenryIE/strauss/releases/latest/download/strauss.phar",
+      "@php bin/strauss.phar",
+      "@php composer dump-autoload"
+    ],
+    "post-install-cmd": [
+      "@prefix-namespaces"
+    ],
+    "post-update-cmd": [
+      "@prefix-namespaces"
+    ]
+  }
+}
