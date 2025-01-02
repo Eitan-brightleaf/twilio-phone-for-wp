@@ -552,12 +552,12 @@ class Twilio_Phone_For_WP {
 				if ( ! is_array( $connect_info ) ) {
 					$connect_info = [];
 				}
-				$connect_info['sid'] = $app_sid;
+				$connect_info['app-sid'] = $app_sid;
 				update_option( 'twilio_connect_info', $connect_info );
 			}
 		}
 		$connect_info = get_option( 'twilio_connect_info' );
-		$app_sid      = $connect_info['sid'] ?? '';
+		$app_sid      = $connect_info['app-sid'] ?? '';
 
         ?>
         <h1>Enter App SID</h1>
