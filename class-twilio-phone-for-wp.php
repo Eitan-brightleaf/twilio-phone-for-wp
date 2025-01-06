@@ -12,11 +12,17 @@
  * @subpackage Twilio_phone_for_wp/includes
  */
 
+
+use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Jwt\AccessToken;
+use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Jwt\Grants\VoiceGrant;
 use Random\RandomException;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	die;
 }
+
+require_once 'vendor/autoload.php';
+
 
 /**
  * The core plugin class.
@@ -125,6 +131,48 @@ class Twilio_Phone_For_WP {
 	private function init_admin(): void {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
 		add_action( 'admin_menu', [ $this, 'add_top_level_menu' ] );
+        add_action( 'wp_ajax_get_token', [ $this, 'get_token' ] );
+        // todo add settings link to plugin pg
+	}
+
+	/**
+	 * Generates and returns a Twilio access token required for communication.
+	 *
+	 * This method verifies the security nonce, retrieves Twilio credentials from WordPress options,
+	 * instantiates a new Twilio AccessToken, applies necessary voice grants, and then returns the JWT token
+	 * and associated identity in a JSON response. If any step fails, an appropriate error is returned as JSON.
+	 *
+	 * @return void Outputs a JSON response containing either the access token and identity or an error message.
+	 * @throws Exception Throws an exception if the Twilio library encounters an issue while generating the token.
+	 */
+	public function get_token(): void {
+
+		if ( ! isset( $_POST['security'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['security'] ) ), 'get_token_nonce' ) ) {
+			wp_send_json_error( 'Invalid nonce', 403 );
+			die();
+		}
+
+		$connect_info = get_option( 'twilio_connect_info' );
+		if ( ! is_array( $connect_info ) ) {
+			wp_send_json_error( 'Invalid credentials', 500 );
+		}
+		$account_sid    = $connect_info['account_sid'] ?? null;
+		$api_key_sid    = $connect_info['api_key_sid'] ?? null;
+		$api_key_secret = $connect_info['api_key_secret'] ?? null;
+		$app_sid        = $connect_info['app_sid'] ?? null;
+		$phone_number   = $connect_info['phone_number'] ?? null;
+
+		$access_token = new AccessToken( $account_sid, $api_key_sid, $api_key_secret, 3600, $phone_number );
+
+		$voice_grant = new VoiceGrant();
+		$voice_grant->setOutgoingApplicationSid( $app_sid );
+		$voice_grant->setIncomingAllow( true );
+		$access_token->addGrant( $voice_grant );
+
+		$result = [
+			'token'    => $access_token->toJWT(),
+		];
+		wp_send_json_success( $result );
 	}
 
 	/**
@@ -226,14 +274,43 @@ class Twilio_Phone_For_WP {
 	 * @return void
 	 */
 	public function enqueue_scripts(): void {
-        $plugin_pg_url     = plugins_url( 'css/plugin-page.css', __FILE__ );
-        $plugin_pg_path    = plugin_dir_path( __FILE__ ) . 'css/plugin-page.css';
-        $plugin_pg_version = filemtime( $plugin_pg_path );
-	    wp_register_style( $this->prefix . '_plugin_page', $plugin_pg_url, [], $plugin_pg_version );
+        $css_plugin_pg_url     = plugins_url( 'includes/css/plugin-page.css', __FILE__ );
+        $css_plugin_pg_path    = plugin_dir_path( __FILE__ ) . 'includes/css/plugin-page.css';
+        $css_plugin_pg_version = filemtime( $css_plugin_pg_path );
+	    wp_register_style( $this->prefix . '_plugin_page', $css_plugin_pg_url, [], $css_plugin_pg_version );
+
+        $js_plugin_pg_url     = plugins_url( 'includes/js/plugin-page.js', __FILE__ );
+		$js_plugin_pg_path    = plugin_dir_path( __FILE__ ) . 'includes/js/plugin-page.js';
+		$js_plugin_pg_version = filemtime( $js_plugin_pg_path );
+		wp_register_script( $this->prefix . '_plugin_page', $js_plugin_pg_url, [ 'jquery' ], $js_plugin_pg_version, true );
+
         if ( isset( $_GET['page'] ) && sanitize_key( $_GET['page'] ) === $this->slug ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-            wp_enqueue_style( $this->prefix . '_plugin_page' );
+	        wp_enqueue_style( $this->prefix . '_plugin_page' );
+            wp_enqueue_script( $this->prefix . '_plugin_page' );
         }
-    }
+
+        $twilio_phone_url     = plugins_url( 'includes/js/twilio-phone.js', __FILE__ );
+        $twilio_phone_path    = plugin_dir_path( __FILE__ ) . 'includes/js/twilio-phone.js';
+        $twilio_phone_version = filemtime( $twilio_phone_path );
+        wp_register_script( $this->prefix . '_twilio_phone', $twilio_phone_url, [ 'jquery' ], $twilio_phone_version, true );
+        if ( isset( $_GET['page'] ) && sanitize_key( $_GET['page'] ) === $this->slug && isset( $_GET['tab'] ) && 'phone' === sanitize_key( $_GET['tab'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $twilio_url     = plugins_url( 'includes/js/twilio.min.js', __FILE__ );
+            $twilio_path    = plugin_dir_path( __FILE__ ) . 'includes/js/twilio.min.js';
+            $twilio_version = filemtime( $twilio_path );
+
+            wp_enqueue_script( 'twilio-client', $twilio_url, [], $twilio_version, true );
+            wp_enqueue_script( $this->prefix . '_twilio_phone' );
+            wp_add_inline_script(
+                $this->prefix . '_twilio_phone',
+                sprintf(
+	                'const dialpadAjax = { ajax_url: "%s", security: "%s" };',
+	                admin_url( 'admin-ajax.php' ),
+	                wp_create_nonce( 'get_token_nonce' )
+                ),
+                'before'
+            );
+        }
+	}
 	/**
 	 * Add a top-level menu in the WordPress admin.
 	 *
@@ -388,6 +465,11 @@ class Twilio_Phone_For_WP {
      */
 	public function create_sub_menu(): void {
 
+        if ( isset( $_GET['tab'] ) && 'phone' === sanitize_key( $_GET['tab'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $this->render_phone_tab();
+            return;
+        }
+
         if ( isset( $_GET['step'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $step = sanitize_key( $_GET['step'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         } else {
@@ -409,47 +491,58 @@ class Twilio_Phone_For_WP {
      * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
      */
     private function render_step_one(): void {
-        $settings_url    = $this->settings_url;
-        $account_sid_pic = plugins_url( '/images/account-sid.png', __FILE__ );
+        $account_sid_pic = plugins_url( '/includes/images/account-sid.png', __FILE__ );
         $nonce           = wp_create_nonce( 'twilio_phone_setup_part_one' );
 
         if ( isset( $_POST['twilio-setup-step-one'] ) && 'save' === $_POST['twilio-setup-step-one'] && isset( $_POST['twilio-setup-pt-one-nonce'] ) &&
             wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-one-nonce'] ) ), 'twilio_phone_setup_part_one' ) &&
             ! empty( $_POST['account_sid'] ) ) {
 
-            $sid = sanitize_text_field( wp_unslash( $_POST['account_sid'] ) );
+            $account_sid = sanitize_text_field( wp_unslash( $_POST['account_sid'] ) );
 
-            if ( ! $this::decrypt( $sid ) ) {
-                $sid          = $this::encrypt( $sid );
+            if ( ! $this::decrypt( $account_sid ) ) {
+                $account_sid  = $this::encrypt( $account_sid );
                 $connect_info = get_option( 'twilio_connect_info' );
                 if ( ! is_array( $connect_info ) ) {
                     $connect_info = [];
                 }
-                $connect_info['sid'] = $sid;
+                $connect_info['account_sid'] = $account_sid;
                 update_option( 'twilio_connect_info', $connect_info );
             }
         }
         $connect_info = get_option( 'twilio_connect_info' );
-        $sid          = $connect_info['sid'] ?? '';
+        $account_sid  = $connect_info['account_sid'] ?? '';
         ?>
-        <h1>Twilio Account SID</h1>
-        <nav class="nav-bar">
-            <a href="<?php echo esc_url( $settings_url ); ?>&step=1" class="active-link">Step 1-Get Account SID</a> |
-            <a href="<?php echo esc_url( $settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
-        </nav>
-        <p class="twilio-setup-instructions">
-            Go to the <a target="_blank" href="https://www.twilio.com/console">Twilio Console Home Page</a> and copy your Account SID here.
-            You can find it on the bottom of the page in the "Account Info" section.
-        </p>
-        <img src="<?php echo esc_url( $account_sid_pic ); ?>" alt="Twilio Account SID" class="twilio-setup-pic">
-        <form action="" method="post" class="twilio-setup-form">
-            <input type="hidden" name="twilio-setup-pt-one-nonce" value="<?php echo esc_attr( $nonce ); ?>">
-            <input type="password" name="account_sid" placeholder="Account SID" value="<?php echo esc_attr( $sid ); ?>" required class="twilio-setup-input">
-            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-one" value="save">Save</button>
-        </form>
-        <a href="<?php echo esc_url( $settings_url ); ?>&step=2" class="button">Next</a>
+            <div class="wrap fs-section fs-full-size-wrapper">
+                <h2 class="nav-tab-wrapper" style="display: none;">
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                </h2>
+                <div class="twilio-setup-section-content">
+                    <h1>Twilio Account SID</h1>
+                    <nav class="nav-bar">
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1" class="active-link">Step 1-Get Account SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
+                    </nav>
+                    <p class="twilio-setup-instructions">
+                        Go to the <a target="_blank" href="https://www.twilio.com/console">Twilio Console Home Page</a> and copy
+                        your Account SID here.
+                        You can find it on the bottom of the page in the "Account Info" section.
+                    </p>
+                    <img src="<?php echo esc_url( $account_sid_pic ); ?>" alt="Twilio Account SID" class="twilio-setup-pic">
+                    <form action="" method="post" class="twilio-setup-form">
+                        <input type="hidden" name="twilio-setup-pt-one-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+                        <label for="account_sid" class="twilio-setup-label">Account SID</label>
+                        <input id="account_sid" type="password" name="account_sid"
+                                                                value="<?php echo esc_attr( $account_sid ); ?>" required class="twilio-setup-input">
+                        <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-one" value="save">Save
+                        </button>
+                    </form>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="button">Next</a>
+                </div>
+            </div>
         <?php
     }
 
@@ -466,9 +559,9 @@ class Twilio_Phone_For_WP {
     private function render_step_two(): void {
         $nonce = wp_create_nonce( 'twilio_phone_setup_part_two' );
 
-        $create_api_button_pic   = plugins_url( '/images/create-api-key-button.png', __FILE__ );
-        $create_new_api_key_pic  = plugins_url( '/images/create-new-api-key.png', __FILE__ );
-        $api_key_credentials_pic = plugins_url( '/images/api-key-credentials.png', __FILE__ );
+        $create_api_button_pic   = plugins_url( '/includes/images/create-api-key-button.png', __FILE__ );
+        $create_new_api_key_pic  = plugins_url( '/includes/images/create-new-api-key.png', __FILE__ );
+        $api_key_credentials_pic = plugins_url( '/includes/images/api-key-credentials.png', __FILE__ );
 
         if ( isset( $_POST['twilio-setup-step-two'] ) && 'save' === $_POST['twilio-setup-step-two'] && isset( $_POST['twilio-setup-pt-two-nonce'] ) &&
             wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-two-nonce'] ) ), 'twilio_phone_setup_part_two' ) &&
@@ -498,32 +591,42 @@ class Twilio_Phone_For_WP {
         $api_key_secret = $connect_info['api_key_secret'] ?? '';
 
         ?>
-        <h1>Enter API Info</h1>
-        <nav class="nav-bar">
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="active-link">Step 2-Enter API Info</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
-        </nav>
-        <p class="twilio-setup-instructions">
-            Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/settings/api-keys">Twilio console > Voice > Settings > API Keys</a>.
-            Click the “Create API Key” button. Enter a name for the friendly name field (such as "Twilio WordPress plugin").
-            Leave the “Key Type” as “Standard”. Click the “Create” button to create the API key.
-            Please realise the API key secret is only shown once, so make sure you copy it down somewhere safe. Then enter the API key SID and secret below.
-        </p>
-        <div class="twilio-setup-images">
-            <img src="<?php echo esc_url( $create_api_button_pic ); ?>" alt="Create API Button" class="twilio-setup-pic">
-            <img src="<?php echo esc_url( $create_new_api_key_pic ); ?>" alt="Create New API Key" class="twilio-setup-pic">
-            <img src="<?php echo esc_url( $api_key_credentials_pic ); ?>" alt="API Key Credentials" class="twilio-setup-pic">
-        </div>
-        <form action="" method="post" class="twilio-setup-form">
-            <input type="hidden" name="twilio-setup-pt-two-nonce" value="<?php echo esc_attr( $nonce ); ?>">
-            <input type="password" name="api_key_sid" value="<?php echo esc_attr( $api_key_sid ); ?>" placeholder="API Key SID" required class="twilio-setup-input">
-            <input type="password" name="api_key_secret" value="<?php echo esc_attr( $api_key_secret ); ?>" placeholder="API Key Secret" required class="twilio-setup-input">
-            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-two" value="save">Save</button>
-        </form>
-        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1" class="button">Back</a>
-        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="button">Next</a>
+            <div class="wrap fs-section fs-full-size-wrapper">
+                <h2 class="nav-tab-wrapper" style="display: none;">
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                </h2>
+                <div class="twilio-setup-section-content">
+                    <h1>Enter API Info</h1>
+                    <nav class="nav-bar">
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="active-link">Step 2-Enter API Info</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
+                    </nav>
+                    <p class="twilio-setup-instructions">
+                        Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/settings/api-keys">Twilio console > Voice > Settings > API Keys</a>.
+                        Click the “Create API Key” button. Enter a name for the friendly name field (such as "Twilio WordPress plugin").
+                        Leave the “Key Type” as “Standard”. Click the “Create” button to create the API key.
+                        Please realise the API key secret is only shown once, so make sure you copy it down somewhere safe. Then enter the API key SID and secret below.
+                    </p>
+                    <div class="twilio-setup-images">
+                        <img src="<?php echo esc_url( $create_api_button_pic ); ?>" alt="Create API Button" class="twilio-setup-pic">
+                        <img src="<?php echo esc_url( $create_new_api_key_pic ); ?>" alt="Create New API Key" class="twilio-setup-pic">
+                        <img src="<?php echo esc_url( $api_key_credentials_pic ); ?>" alt="API Key Credentials" class="twilio-setup-pic">
+                    </div>
+                    <form action="" method="post" class="twilio-setup-form">
+                        <input type="hidden" name="twilio-setup-pt-two-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+                        <label for="api_key_sid" class="twilio-setup-label">API Key Sid</label>
+                        <input id="api_key_sid" type="password" name="api_key_sid" value="<?php echo esc_attr( $api_key_sid ); ?>" required class="twilio-setup-input">
+                        <label for="api_key_secret" class="twilio-setup-label">API Key Secret</label>
+                        <input id="api_key_secret" type="password" name="api_key_secret" value="<?php echo esc_attr( $api_key_secret ); ?>" required class="twilio-setup-input">
+                        <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-two" value="save">Save</button>
+                    </form>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1" class="button">Back</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="button">Next</a>
+                </div>
+            </div>
         <?php
     }
 
@@ -541,9 +644,9 @@ class Twilio_Phone_For_WP {
 	private function render_step_three(): void {
 		$nonce = wp_create_nonce( 'twilio_phone_setup_part_three' );
 
-		$create_twimil_app_button_pic = plugins_url( '/images/create-twiml-app-button.png', __FILE__ );
-        $create_new_twiml_app_pic     = plugins_url( '/images/create-twiml-app.png', __FILE__ );
-        $twiml_app_sid_pic            = plugins_url( '/images/twiml-app-sid.png', __FILE__ );
+		$create_twimil_app_button_pic = plugins_url( '/includes/images/create-twiml-app-button.png', __FILE__ );
+        $create_new_twiml_app_pic     = plugins_url( '/includes/images/create-twiml-app.png', __FILE__ );
+        $twiml_app_sid_pic            = plugins_url( '/includes/images/twiml-app-sid.png', __FILE__ );
 
 		if ( isset( $_POST['twilio-setup-step-three'] ) && 'save' === $_POST['twilio-setup-step-three'] && isset( $_POST['twilio-setup-pt-three-nonce'] ) &&
 			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-three-nonce'] ) ), 'twilio_phone_setup_part_three' ) &&
@@ -556,43 +659,52 @@ class Twilio_Phone_For_WP {
 				if ( ! is_array( $connect_info ) ) {
 					$connect_info = [];
 				}
-				$connect_info['app-sid'] = $app_sid;
+				$connect_info['app_sid'] = $app_sid;
 				update_option( 'twilio_connect_info', $connect_info );
 			}
 		}
 		$connect_info = get_option( 'twilio_connect_info' );
-		$app_sid      = $connect_info['app-sid'] ?? '';
+		$app_sid      = $connect_info['app_sid'] ?? '';
 
         ?>
-        <h1>Enter App SID</h1>
-        <nav class="nav-bar">
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="active-link">Step 3-Enter App SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
-        </nav>
-        <p class="twilio-setup-instructions">
-            Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/twiml/apps">Twilio account Console > Voice > TwiML > TwiML Apps</a>.
-            Click on the “Create new TwiML App” button. Enter a name for the friendly name field (such as "Twilio WordPress plugin").
-            Copy the following link into the Voice Configuration Request URL. <!--TODO--> Leave the other fields empty for now.
-            Click the “Create” button to create the TwiML application. You will be redirected back to the TwiML Apps dashboard.
-            Click on the TwiML App you just created. On the page for this app, select the SID value and copy it into the field below.
-        </p>
+            <div class="wrap fs-section fs-full-size-wrapper">
+                <h2 class="nav-tab-wrapper" style="display: none;">
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                </h2>
+                <div class="twilio-setup-section-content">
+                    <h1>Enter App SID</h1>
+                    <nav class="nav-bar">
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="active-link">Step 3-Enter App SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4">Step 4-Enter Phone Number</a>
+                    </nav>
+                    <p class="twilio-setup-instructions">
+                        Navigate to <a target="_blank" href="https://www.twilio.com/console/voice/twiml/apps">Twilio account Console > Voice > TwiML > TwiML Apps</a>.
+                        Click on the “Create new TwiML App” button. Enter a name for the friendly name field (such as "Twilio WordPress plugin").
+                        Copy the following link into the Voice Configuration Request URL. <!--TODO--> Leave the other fields empty for now.
+                        Click the “Create” button to create the TwiML application. You will be redirected back to the TwiML Apps dashboard.
+                        Click on the TwiML App you just created. On the page for this app, select the SID value and copy it into the field below.
+                    </p>
 
-        <div class="twilio-setup-images">
-            <img src="<?php echo esc_url( $create_twimil_app_button_pic ); ?>" alt="Create Twiml App Button" class="twilio-setup-pic">
-            <img src="<?php echo esc_url( $create_new_twiml_app_pic ); ?>" alt="Create New Twiml App" class="twilio-setup-pic">
-            <img src="<?php echo esc_url( $twiml_app_sid_pic ); ?>" alt="Twiml App SID" class="twilio-setup-pic">
-        </div>
+                    <div class="twilio-setup-images">
+                        <img src="<?php echo esc_url( $create_twimil_app_button_pic ); ?>" alt="Create Twiml App Button" class="twilio-setup-pic">
+                        <img src="<?php echo esc_url( $create_new_twiml_app_pic ); ?>" alt="Create New Twiml App" class="twilio-setup-pic">
+                        <img src="<?php echo esc_url( $twiml_app_sid_pic ); ?>" alt="Twiml App SID" class="twilio-setup-pic">
+                    </div>
 
-        <form action="" method="post" class="twilio-setup-form">
-            <input type="hidden" name="twilio-setup-pt-three-nonce" value="<?php echo esc_attr( $nonce ); ?>">
-            <input type="password" name="app-SID" value="<?php echo esc_attr( $app_sid ); ?>" placeholder="App SID" required class="twilio-setup-input">
-            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-three" value="save">Save</button>
-        </form>
+                    <form action="" method="post" class="twilio-setup-form">
+                        <input type="hidden" name="twilio-setup-pt-three-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+                        <label for="app_sid" class="twilio-setup-label">App SID</label>
+                        <input id="app_sid" type="password" name="app-SID" value="<?php echo esc_attr( $app_sid ); ?>" required class="twilio-setup-input">
+                        <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-three" value="save">Save</button>
+                    </form>
 
-        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="button">Back</a>
-        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4" class="button">Next</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2" class="button">Back</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4" class="button">Next</a>
+                </div>
+            </div>
         <?php
 	}
 
@@ -624,27 +736,78 @@ class Twilio_Phone_For_WP {
         $connect_info = get_option( 'twilio_connect_info' );
         $phone_number = $connect_info['phone_number'] ?? '';
         ?>
-        <h1>Enter Twilio Phone Number</h1>
-        <nav class="nav-bar">
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
-            <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4" class="active-link">Step 4-Enter Phone Number</a>
-        </nav>
-        <p class="twilio-setup-instructions">
-            Go to your <a target="_blank" href="https://www.twilio.com/console/phone-numbers/incoming">Twilio account console > Phone Numbers > Manage Numbers > Active Numbers</a>.
-            Select the number you want to use for this plugin. Copy the phone number and paste it into the field below removing spaces but leaving the + sign,
-            ensuring the number is in <a target="_blank" href="https://www.twilio.com/docs/glossary/what-e164">E.164</a> format. <!--TODO configure #-->
-        </p>
-        <div class="twilio-setup-images">
+            <div class="wrap fs-section fs-full-size-wrapper">
+                <h2 class="nav-tab-wrapper" style="display: none;">
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                </h2>
+                <div class="twilio-setup-section-content">
+                    <h1>Enter Twilio Phone Number</h1>
+                    <nav class="nav-bar">
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=1">Step 1-Get Account SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=2">Step 2-Enter API Info</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3">Step 3-Enter App SID</a> |
+                        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=4" class="active-link">Step 4-Enter Phone Number</a>
+                    </nav>
+                    <p class="twilio-setup-instructions">
+                        Go to your <a target="_blank" href="https://www.twilio.com/console/phone-numbers/incoming">Twilio account console > Phone Numbers > Manage Numbers > Active Numbers</a>.
+                        Select the number you want to use for this plugin. Copy the phone number and paste it into the field below removing spaces but leaving the + sign,
+                        ensuring the number is in <a target="_blank" href="https://www.twilio.com/docs/glossary/what-e164">E.164</a> format. <!--TODO configure #-->
+                    </p>
+                    <div class="twilio-setup-images">
 
+                    </div>
+                    <form action="" method="post" class="twilio-setup-form">
+                        <input type="hidden" name="twilio-setup-pt-four-nonce" value="<?php echo esc_attr( $nonce ); ?>">
+                        <label for="twilio_phone_number" class="twilio-setup-label">Twilio Phone Number</label>
+                        <input id="twilio_phone_number" type="tel" pattern="^\+[1-9]\d{1,14}$" name="phone-number" value="<?php echo esc_attr( $phone_number ); ?>" placeholder="+1234567890" required class="twilio-setup-input">
+                        <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-four" value="save">Save</button>
+                    </form>
+                    <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="button">Back</a>
+                </div>
+            </div>
+        <?php
+	}
+
+	/**
+	 * Renders the Twilio Phone tab content in the plugin's settings page.
+	 *
+	 * @return void
+	 */
+	private function render_phone_tab(): void {
+        ?>
+
+        <div class="wrap fs-section fs-full-size-wrapper">
+            <h2 class="nav-tab-wrapper" style="display: none;">
+                <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab home'>Settings</a>
+                <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab nav-tab-active fs-tab'>Twilio Phone</a>
+            </h2>
+            <div class="twilio-phone-dialer">
+                <!-- Text field on top of the dial pad -->
+                <label for="number-to-dial"></label>
+                <input type="text" id="number-to-dial" readonly/>
+
+                <!-- Dial Pad -->
+                <div class="dial-pad">
+			        <?php
+			        $buttons = [
+				        [ '1', '2', '3' ],
+				        [ '4', '5', '6' ],
+				        [ '7', '8', '9' ],
+				        [ '*', '0', '#' ],
+				        [ '&#128222;', '+', '&#x21A9;' ],
+			        ];
+			        foreach ( $buttons as $row ) :
+				        ?>
+                        <div class="dial-pad-row">
+					        <?php foreach ( $row as $button ) : ?>
+                                <button class="dial-button"><?php echo esc_html( $button ); ?></button>
+					        <?php endforeach; ?>
+                        </div>
+			        <?php endforeach; ?>
+                </div>
+            </div>
         </div>
-        <form action="" method="post" class="twilio-setup-form">
-            <input type="hidden" name="twilio-setup-pt-four-nonce" value="<?php echo esc_attr( $nonce ); ?>">
-            <input type="tel" pattern="^\+[1-9]\d{1,14}$" name="phone-number" value="<?php echo esc_attr( $phone_number ); ?>" placeholder="+1234567890" required class="twilio-setup-input">
-            <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-four" value="save">Save</button>
-        </form>
-        <a href="<?php echo esc_url( $this->settings_url ); ?>&step=3" class="button">Back</a>
         <?php
 	}
 }

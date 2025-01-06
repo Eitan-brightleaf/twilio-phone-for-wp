@@ -1,3 +1,16 @@
+.twilio-setup-section-content {
+    margin-top: 20px;
+    margin-bottom: 20px;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.twilio-setup-label {
+    color: black;
+    font-size: .95rem;
+    font-weight: 500;
+}
 .twilio-setup-instructions {
     font-size: 1.5em;
     color: #333;
@@ -94,3 +107,37 @@ a.button {
 .nav-bar .active-link {
     color: #4fbd51;
 }
+
+.twilio-phone-dialer {
+    display: flex;
+    flex-direction: column;
+    align-items: center; 
+    margin-top: 50px;
+}
+
+#number-to-dial {
+    width: 200px;
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 20px;
+}
+
+.dial-pad {
+    display: flex;
+    flex-direction: column; 
+    align-items: center;
+}
+
+.dial-pad-row {
+    display: flex;
+    justify-content: center; 
+    margin-bottom: 5px;
+}
+
+.dial-button {
+    width: 50px;
+    height: 50px;
+    margin: 2px; 
+    font-size: 18px;
+}
+
