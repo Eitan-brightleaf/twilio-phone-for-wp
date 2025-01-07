@@ -15,6 +15,7 @@
 
 use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Jwt\AccessToken;
 use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Jwt\Grants\VoiceGrant;
+use BrightleafDigital\TwilioPhoneForWordPress\Twilio\TwiML\VoiceResponse;
 use Random\RandomException;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -132,8 +133,62 @@ class Twilio_Phone_For_WP {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
 		add_action( 'admin_menu', [ $this, 'add_top_level_menu' ] );
         add_action( 'wp_ajax_get_token', [ $this, 'get_token' ] );
+        add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
         // todo add settings link to plugin pg
 	}
+
+	/**
+	 * Registers custom REST API routes for the Twilio integration.
+	 *
+	 * This method creates a REST route for handling Twilio webhooks. The webhook
+	 * route is configured to accept POST requests and uses a callback function
+	 * to process incoming requests. The route is publicly accessible through the
+	 * specified permission callback.
+	 *
+	 * @return void
+	 */
+	public function register_rest_routes(): void {
+        register_rest_route(
+            'twilio/v1',
+            '/webhook',
+            [
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'handle_twilio_webhook' ],
+				'permission_callback' => '__return_true', // Make publicly accessible (you can restrict IPs later for Twilio security)
+			]
+        );
+    }
+
+	/**
+	 * Handles the incoming Twilio webhook request.
+	 *
+	 * Processes the JSON payload sent by Twilio, sanitizes the data, and extracts
+	 * specific call-related parameters such as Call SID, from number, to number, and call status.
+	 *
+	 * @param WP_REST_Request $request The incoming REST request object containing the Twilio webhook data.
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function handle_twilio_webhook( WP_REST_Request $request ): WP_REST_Response {
+        $post_stuff = $request->get_body_params();
+        $other_post_stuff = $request->get_params();
+        $headers = $request->get_headers();
+        ob_start();
+        var_dump( $post_stuff );
+        var_dump( $other_post_stuff );
+        var_dump( $headers );
+        $post_stuff_dump = ob_get_clean();
+        file_put_contents( __DIR__ . '/webhook.txt', $post_stuff_dump );
+        $connect_info = get_option( 'twilio_connect_info' );
+        $phone_number = $connect_info['phone_number'] ?? null;
+	    $post_data    = $_POST;
+	    $to           = sanitize_text_field( $post_data['To'] ?? '' );
+        $response     = new VoiceResponse();
+        $dial         = $response->dial( $to, [ 'callerId' => $phone_number ] );
+		header( 'Content-Type: text/xml' );
+        echo $response;
+		return new WP_REST_Response();
+    }
 
 	/**
 	 * Generates and returns a Twilio access token required for communication.
@@ -156,11 +211,17 @@ class Twilio_Phone_For_WP {
 		if ( ! is_array( $connect_info ) ) {
 			wp_send_json_error( 'Invalid credentials', 500 );
 		}
-		$account_sid    = $connect_info['account_sid'] ?? null;
-		$api_key_sid    = $connect_info['api_key_sid'] ?? null;
-		$api_key_secret = $connect_info['api_key_secret'] ?? null;
-		$app_sid        = $connect_info['app_sid'] ?? null;
+
+		$account_sid    = $this::decrypt( $connect_info['account_sid'] );
+		$api_key_sid    = $this::decrypt( $connect_info['api_key_sid'] );
+		$api_key_secret = $this::decrypt( $connect_info['api_key_secret'] );
+		$app_sid        = $this::decrypt( $connect_info['app_sid'] );
 		$phone_number   = $connect_info['phone_number'] ?? null;
+
+        $result = $this->validate_credentials( $account_sid, $api_key_sid, $api_key_secret, $app_sid, $phone_number );
+        if ( ! $result ) {
+            wp_send_json_error( 'Invalid credentials', 500 );
+        }
 
 		$access_token = new AccessToken( $account_sid, $api_key_sid, $api_key_secret, 3600, $phone_number );
 
@@ -170,7 +231,7 @@ class Twilio_Phone_For_WP {
 		$access_token->addGrant( $voice_grant );
 
 		$result = [
-			'token'    => $access_token->toJWT(),
+			'token' => $access_token->toJWT(),
 		];
 		wp_send_json_success( $result );
 	}
@@ -294,8 +355,8 @@ class Twilio_Phone_For_WP {
         $twilio_phone_version = filemtime( $twilio_phone_path );
         wp_register_script( $this->prefix . '_twilio_phone', $twilio_phone_url, [ 'jquery' ], $twilio_phone_version, true );
         if ( isset( $_GET['page'] ) && sanitize_key( $_GET['page'] ) === $this->slug && isset( $_GET['tab'] ) && 'phone' === sanitize_key( $_GET['tab'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-            $twilio_url     = plugins_url( 'includes/js/twilio.min.js', __FILE__ );
-            $twilio_path    = plugin_dir_path( __FILE__ ) . 'includes/js/twilio.min.js';
+            $twilio_url     = plugins_url( 'includes/js/twilio.js', __FILE__ );
+            $twilio_path    = plugin_dir_path( __FILE__ ) . 'includes/js/twilio.js';
             $twilio_version = filemtime( $twilio_path );
 
             wp_enqueue_script( 'twilio-client', $twilio_url, [], $twilio_version, true );
@@ -809,5 +870,98 @@ class Twilio_Phone_For_WP {
             </div>
         </div>
         <?php
+	}
+
+	/**
+	 * Validates the provided Twilio credentials by checking the account SID, API key SID, API key secret, application SID, and phone number.
+	 * Performs regex validation, API access validation, and ensures the application SID and phone number exist under the account.
+	 *
+	 * @param false|string $account_sid The Twilio Account SID to validate.
+	 * @param false|string $api_key_sid The Twilio API Key SID to validate.
+	 * @param false|string $api_key_secret The Twilio API Key secret to validate.
+	 * @param false|string $app_sid The Twilio Application SID to validate.
+	 * @param null|string  $phone_number The Twilio phone number to validate.
+	 *
+	 * @return bool True if all credentials are valid and accessible via the Twilio API, false otherwise.
+	 *
+	 * @throws WP_Error If HTTP requests to the Twilio API fail unexpectedly.
+	 */
+	private function validate_credentials( false|string $account_sid, false|string $api_key_sid, false|string $api_key_secret, false|string $app_sid, null|string $phone_number ): bool {
+		if ( ! preg_match( '/^AC[a-zA-Z0-9]{32}$/', $account_sid ) ) {
+			return false;
+		}
+        if ( ! preg_match( '/^SK[a-zA-Z0-9]{32}$/', $api_key_sid ) ) {
+            return false;
+        }
+		if ( empty( $api_key_secret ) ) {
+			return false;
+		}
+
+		if ( ! preg_match( '/^AP[a-zA-Z0-9]{32}$/', $app_sid ) ) {
+            return false;
+		}
+        if ( ! preg_match( '/^\+[1-9]\d{1,14}$/', $phone_number ) ) {
+            return false;
+        }
+		$endpoint = "https://api.twilio.com/2010-04-01/Accounts/{$account_sid}/Calls.json";
+		$args     = [
+			'headers' => [
+				'Authorization' => 'Basic ' . base64_encode( "{$api_key_sid}:{$api_key_secret}" ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+			],
+			'timeout' => 15, // Optional: Set timeout for the request
+		];
+		$response = wp_remote_get( $endpoint, $args );
+        if ( is_wp_error( $response ) ) {
+            return false;
+        }
+		$status_code = wp_remote_retrieve_response_code( $response );
+		if ( 200 !== $status_code ) {
+            return false;
+		}
+
+        $endpoint = "https://api.twilio.com/2010-04-01/Accounts/{$account_sid}/Applications.json";
+        $response = wp_remote_get( $endpoint, $args );
+        if ( is_wp_error( $response ) ) {
+            return false;
+        }
+        $status_code = wp_remote_retrieve_response_code( $response );
+        if ( 200 !== $status_code ) {
+            return false;
+        }
+        $body      = wp_remote_retrieve_body( $response );
+        $body      = json_decode( $body, true );
+		$app_found = false;
+		foreach ( $body['applications'] as $app ) {
+			if ( $app['sid'] === $app_sid ) {
+				$app_found = true;
+				break;
+			}
+		}
+        if ( ! $app_found ) {
+            return false;
+        }
+        $endpoint = "https://api.twilio.com/2010-04-01/Accounts/{$account_sid}/IncomingPhoneNumbers.json";
+        $response = wp_remote_get( $endpoint, $args );
+        if ( is_wp_error( $response ) ) {
+            return false;
+        }
+        $status_code = wp_remote_retrieve_response_code( $response );
+        if ( 200 !== $status_code ) {
+            return false;
+        }
+        $body  = wp_remote_retrieve_body( $response );
+        $body  = json_decode( $body, true );
+        $found = false;
+        foreach ( $body['incoming_phone_numbers'] as $number ) {
+            if ( $number['phone_number'] === $phone_number ) {
+                $found = true;
+                break;
+            }
+        }
+        if ( ! $found ) {
+            return false;
+        }
+
+        return true;
 	}
 }

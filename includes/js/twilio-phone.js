@@ -11,18 +11,7 @@ jQuery(
             }
         ).then(
             function ( response ) {
-                console.dir( response ); // todo remove
-                device = new Twilio.Device(
-                    response.data.token,
-                    {
-						codecPreferences: ["opus", "pcmu"], // Preferred codecs
-						allowIncomingWhileBusy : true,
-						closeProtection: true,
-						enableImprovedSignalingErrorPrecision: true,
-                    }
-                );
-
-                // Register the device
+                device = new Twilio.Device( response.data.token );
                 device.register();
                 device.on(
                     'tokenWillExpire',
@@ -45,11 +34,15 @@ jQuery(
                 console.dir( error ); // todo improve
             }
         );
-	function make_outgoing_call( number ) {
+	async function make_outgoing_call( number ) {
 		const params = {
 			To: number,
 		};
-		device.connect( { params: params } ); // todo improve
+        try {
+            const outgoing_call = await device.connect( { params: params } ); // todo improve
+        } catch ( error ) {
+            console.error( error );
+        }
 	}
         const $dial_field = $( '#number-to-dial' );
         const buttons     = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#', '+'];
