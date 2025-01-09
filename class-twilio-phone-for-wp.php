@@ -372,6 +372,44 @@ class Twilio_Phone_For_WP {
             );
         }
 	}
+
+    /**
+     * Retrieves the SVG icon for the application menu in a base64-encoded string.
+     *
+     * The method generates an SVG icon XML, encodes it in base64, and formats it as a data URL
+     * suitable for use as an image source in web applications.
+     *
+     * @return string The base64-encoded SVG icon as a data URL.
+     */
+    public function get_app_menu_icon(): string {
+        $svg_xml = '<?xml version="1.0" encoding="utf-8"?><svg height="24" id="Layer_1" viewBox="0 0 300 300" width="24" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<defs>
+<style>
+      .cls-1 {
+        fill: #fff;
+      }
+      .cls-4 {
+        fill: #fff;
+      }
+    </style>
+<radialGradient cx="-28.79" cy="-50.67" fx="-28.79" fy="-50.67" gradientTransform="translate(.26 .38) scale(1.05)" gradientUnits="userSpaceOnUse" id="radial-gradient" r="433.22">
+<stop offset="0" stop-color="#402a56"/>
+<stop offset="1" stop-color="#2f2e41"/>
+</radialGradient>
+</defs>
+<g>
+<g>
+<path class="cls-4" d="M204.44,45.16c-7.84,2.35-15.26,5.96-22.05,10.2,0,0-.02,0-.03.01-15.43,9.64-27.63,22.58-34.25,31.59-9.53,13-27.14,30.42-43.32,13.65-2.65-2.75-4.19-6.14-4.72-9.87-1.88-13.02,8.47-30.17,26.39-38.44,33.79-15.6,95.3-12.35,77.98-7.15Z" fill="black"/>
+<path class="cls-1" d="M214.25,50.81c-4.41,2.77-11.39,11-16.43,17.33,0,0,0,0-.01,0-1.67,2.09-3.13,3.98-4.21,5.39-11.02,14.34-31.85,47.1-37.9,60.65-8.26,18.49-36.2,49.52-61.36,35.86-.16-.08-.32-.18-.47-.27-.04-.02-.08-.05-.12-.06-25.34-14.5-19.28-50.67,2.72-74.12-8.81,13.47-6.66,25.45.75,32.32,17.55,16.25,36.77,2.62,47.34-13.87,8.15-12.72,17.71-24.76,28.14-34.82,8.38-8.08,23.51-19.35,32.73-24.2,3.09-1.64,7.15-3.25,8.83-4.2Z" fill="black"/>
+<path class="cls-1" d="M221.42,60.81c-.66,1.3-5.48,10.14-10.42,20.46t0,.01c-3.67,7.67-7.41,16.16-9.58,23-4.32,13.6-16.91,56.93-19.49,64.57-4.83,14.29-11.87,24.53-20.51,31.19-.29.23-.58.44-.88.66-9.4,6.88-20.63,9.65-32.99,8.88-15.67-.98-27.53-10.99-31.65-27.29,2.63,5.35,7.76,9.4,16.05,10.18,17.18,1.61,29.48-5.6,37.79-13.93,2.9-2.9,5.31-5.95,7.27-8.81,7.58-11.05,20.74-47.79,28.81-63.68,15.38-30.3,27.18-36.6,35.61-45.22Z" fill="black"/>
+<path class="cls-1" d="M223.33,174.26h0c-.01.29-.03.58-.05.87-1.12,21.48-14.24,36.62-31.35,38.34-12.52,1.25-24.18-3-31.41-12.78.29-.21.58-.43.88-.66,3.05,1.98,6.75,3.07,11.19,3.03,22.82-.2,31.59-25.49,32.65-44.19,3.54-62.38,17.03-82.68,18.03-85.08-.29,4.36-4.98,17.58-5.62,30.49-.18,3.55-.23,7-.19,10.35h0c.27,21.03,4.28,38.11,5.6,51.39.28,2.83.36,5.58.27,8.23Z" fill="black"/>
+<path class="cls-1" d="M241.9,175.78c-7.01,2.69-13.2,2.1-18.62-.65.02-.29.03-.58.05-.86,2.51.46,5.02.16,7.53-.96,11.48-5.11,7.91-25.36,3.03-36.08-4.65-10.23-7.63-25.56-8.77-44.1,5.25,23.34,16.89,31.95,23.93,41.17,6.73,8.81,16.03,32.6-7.15,41.48Z" fill="black"/>
+</g>
+</g>
+</svg>';
+        return sprintf( 'data:image/svg+xml;base64,%s', base64_encode( $svg_xml ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+    }
+
 	/**
 	 * Add a top-level menu in the WordPress admin.
 	 *
@@ -408,7 +446,7 @@ class Twilio_Phone_For_WP {
 			'manage_options',
 			'gravity_ops',
 			[ $this, 'create_top_level_menu' ],
-			'', // $this->get_app_menu_icon(),
+			$this->get_app_menu_icon(),
 			$menu_position
 		);
 		add_submenu_page(
