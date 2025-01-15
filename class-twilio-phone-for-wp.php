@@ -382,7 +382,7 @@ class Twilio_Phone_For_WP {
      * @return string The base64-encoded SVG icon as a data URL.
      */
     public function get_app_menu_icon(): string {
-        $svg_xml = '<?xml version="1.0" encoding="utf-8"?><svg height="24" id="Layer_1" viewBox="0 0 300 300" width="24" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        $svg_xml = '<?xml version="1.0" encoding="utf-8"?><svg height="24" id="Layer_1" viewBox="0 0 300 300" width="24" xmlns="http://www.w3.org/2000/svg" >
 <defs>
 <style>
       .cls-1 {
