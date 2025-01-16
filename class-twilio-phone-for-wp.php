@@ -167,27 +167,19 @@ class Twilio_Phone_For_WP {
 	 *
 	 * @param WP_REST_Request $request The incoming REST request object containing the Twilio webhook data.
 	 *
-	 * @return WP_REST_Response
+	 * @return void
 	 */
-	public function handle_twilio_webhook( WP_REST_Request $request ): WP_REST_Response {
-        $post_stuff = $request->get_body_params();
-        $other_post_stuff = $request->get_params();
-        $headers = $request->get_headers();
-        ob_start();
-        var_dump( $post_stuff );
-        var_dump( $other_post_stuff );
-        var_dump( $headers );
-        $post_stuff_dump = ob_get_clean();
-        file_put_contents( __DIR__ . '/webhook.txt', $post_stuff_dump );
+	public function handle_twilio_webhook( WP_REST_Request $request ) {
+        $to           = sanitize_text_field( $request->get_param( 'To' ) );
+        $headers      = $request->get_headers();
         $connect_info = get_option( 'twilio_connect_info' );
-        $phone_number = $connect_info['phone_number'] ?? null;
-	    $post_data    = $_POST;
-	    $to           = sanitize_text_field( $post_data['To'] ?? '' );
+        $phone_number = sanitize_text_field( $connect_info['phone_number'] ) ?? null;
         $response     = new VoiceResponse();
-        $dial         = $response->dial( $to, [ 'callerId' => $phone_number ] );
+        if ( ! empty( $to ) && ! empty( $phone_number ) ) {
+            $response->dial( $to, [ 'callerId' => $phone_number ] );
+        }
 		header( 'Content-Type: text/xml' );
-        echo $response;
-		return new WP_REST_Response();
+        echo htmlspecialchars( $response, ENT_XML1 | ENT_QUOTES, 'UTF-8' );
     }
 
 	/**
