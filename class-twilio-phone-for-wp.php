@@ -88,7 +88,13 @@ class Twilio_Phone_For_WP {
      * @return void
      */
     public function __construct() {
-        $this->settings_url = add_query_arg( 'page', $this->slug, admin_url( 'admin.php' ) );
+        $this->settings_url = add_query_arg(
+            [
+				'page' => $this->slug,
+				'tab'  => 'settings',
+			],
+			admin_url( 'admin.php' )
+            );
     }
 
 
@@ -556,7 +562,11 @@ class Twilio_Phone_For_WP {
      */
 	public function create_sub_menu(): void {
 
-        if ( isset( $_GET['tab'] ) && 'phone' === sanitize_key( $_GET['tab'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$is_phone_tab         = isset( $_GET['tab'] ) && 'phone' === sanitize_key( $_GET['tab'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$twilio_info_complete = count( get_option( 'twilio_connect_info' ) ) === 5;
+        $not_settings_tab     = ( isset( $_GET['tab'] ) && 'settings' !== $_GET['tab'] ) || empty( $_GET['tab'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		if ( $is_phone_tab || ( $twilio_info_complete && $not_settings_tab ) ) {
             $this->render_phone_tab();
             return;
         }
