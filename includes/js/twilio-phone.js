@@ -11,9 +11,10 @@ jQuery(
             }
         ).then(
             function ( response ) {
+                console.dir( response );
                 device = new Twilio.Device( response.data.token );
                 device.register();
-                device.on(
+                device.on( // todo make sure this actually works
                     'tokenWillExpire',
                     () => {
 						const token = $.post(

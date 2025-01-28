@@ -111,7 +111,7 @@ a.button {
 .twilio-phone-dialer {
     display: flex;
     flex-direction: column;
-    align-items: center; 
+    align-items: center;
     margin-top: 50px;
 }
 
@@ -124,20 +124,62 @@ a.button {
 
 .dial-pad {
     display: flex;
-    flex-direction: column; 
+    flex-direction: column;
     align-items: center;
 }
 
 .dial-pad-row {
     display: flex;
-    justify-content: center; 
+    justify-content: center;
     margin-bottom: 5px;
 }
 
 .dial-button {
     width: 50px;
     height: 50px;
-    margin: 2px; 
+    margin: 2px;
     font-size: 18px;
 }
 
+.copy-button {
+	width: auto;
+	height: auto;
+	font-size: 12px;
+}
+
+.tpfwp-tooltip {
+    position: relative;
+	display: inline-block;
+}
+
+.tpfwp-tooltip .tpfwp-tooltip-text {
+	visibility: hidden;
+	background-color: #555;
+	color: #fff;
+	text-align: center;
+	border-radius: 6px;
+	padding: 5px;
+	position: absolute;
+	z-index: 1;
+	bottom: 150%;
+	left: 50%;
+	margin-left: -75px;
+	opacity: 0;
+	transition: opacity 0.3s;
+}
+
+.tpfwp-tooltip .tpfwp-tooltip-text::after {
+	content: "";
+	position: absolute;
+	top: 100%;
+	left: 50%;
+	margin-left: -5px;
+	border-width: 5px;
+	border-style: solid;
+	border-color: #555 transparent transparent transparent;
+}
+
+.tpfwp-tooltip:hover .tpfwp-tooltip-text {
+	visibility: visible;
+	opacity: 1;
+}
