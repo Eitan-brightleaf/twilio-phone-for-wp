@@ -16,6 +16,7 @@
 use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Jwt\AccessToken;
 use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Jwt\Grants\VoiceGrant;
 use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Rest\Client;
+use BrightleafDigital\TwilioPhoneForWordPress\Twilio\Security\RequestValidator;
 use BrightleafDigital\TwilioPhoneForWordPress\Twilio\TwiML\VoiceResponse;
 use Random\RandomException;
 
@@ -166,27 +167,73 @@ class Twilio_Phone_For_WP {
         );
     }
 
-	public function handle_twilio_webhook( WP_REST_Request $request ) {
-        $to                 = sanitize_text_field( $request->get_param( 'To' ) );
-        $connect_info       = get_option( 'twilio_connect_info' );
+    /**
+     * Handles incoming Twilio webhook requests.
+     *
+     * This method processes POST requests sent to the Twilio webhook endpoint. It validates
+     * the request against Twilio's signature, checks necessary parameters, and invokes proper
+     * Twilio Voice functionalities such as dialing or responding based on the request data.
+     * If validation fails, an appropriate REST response is returned with a 403 status code.
+     *
+     * @param WP_REST_Request $request The REST API request object containing parameters and headers
+     *                                 sent by the Twilio webhook.
+     * @return WP_REST_Response|void A WP_REST_Response object with an appropriate HTTP response and
+     *                               message on failure, or void for valid XML-based responses.
+     */
+    public function handle_twilio_webhook( WP_REST_Request $request ) {
+        $posted_to          = sanitize_text_field( $request->get_param( 'To' ) );
         $posted_app_sid     = sanitize_text_field( $request->get_param( 'ApplicationSid' ) );
-		$posted_account_sid = sanitize_text_field( $request->get_param( 'AccountSid' ) );
-		$posted_from        = sanitize_text_field( $request->get_param( 'From' ) );
-		$phone_number       = sanitize_text_field( $connect_info['phone_number'] ) ?? null;
-		if ( $this::decrypt( $connect_info['app_sid'] ) !== $posted_app_sid || $this::decrypt( $connect_info['account_sid'] ) !== $posted_account_sid || ! str_contains( $posted_from, $phone_number ) ) {
-	        return new WP_REST_Response(
+        $posted_account_sid = sanitize_text_field( $request->get_param( 'AccountSid' ) );
+        $posted_from        = sanitize_text_field( $request->get_param( 'From' ) );
+        $headers            = $request->get_headers();
+        $twilio_signature   = $headers['x_twilio_signature'][0] ?? null;
+
+        $connect_info = get_option( 'twilio_connect_info' );
+        $phone_number = sanitize_text_field( $connect_info['phone_number'] ) ?? null;
+        $auth_token   = $this::decrypt( $connect_info['auth_token'] ) ?? null;
+
+        $validator = new RequestValidator( $auth_token );
+
+        $url = 'https://dc30-2a06-c701-4f19-600-9890-ef8e-8f56-da3d.ngrok-free.app/brightleaf/wp-json/twilio/v1/webhook'; // todo replace with home_url( 'wp-json/twilio/v1/webhook' );
+
+        $post_data = $request->get_body_params();
+
+        if ( ! $validator->validate( $twilio_signature, $url, $post_data ) ) {
+
+            return new WP_REST_Response(
                 [
-                    'message' => 'Invalid credentials',
+                    'message' => 'Invalid request',
                 ],
                 403
             );
         }
-        $response     = new VoiceResponse();
-        if ( ! empty( $to ) && ! empty( $phone_number ) ) {
-            $response->dial( $to, [ 'callerId' => $phone_number ] );
+        if ( $this::decrypt( $connect_info['app_sid'] ) !== $posted_app_sid || $this::decrypt( $connect_info['account_sid'] ) !== $posted_account_sid || ! ( str_contains( $posted_from, $phone_number ) || $posted_to === $phone_number ) ) {
+	        return new WP_REST_Response(
+                [
+                    'message' => 'Invalid request',
+                ],
+                403
+            );
         }
-		header( 'Content-Type: text/xml' );
-        echo $response;
+
+        $response = new VoiceResponse();
+        if ( ! empty( $posted_to ) && ! empty( $phone_number ) ) {
+            if ( $posted_to !== $phone_number ) {
+                $response->dial( $posted_to, [ 'callerId' => $phone_number ] );
+            } else {
+                $caller_id = sanitize_text_field( $request->get_param( 'Caller' ) );
+                $response->dial( $posted_to, [ 'callerId' => $caller_id ] );
+            }
+            header( 'Content-Type: text/xml' );
+            echo $response;
+        } else {
+            return new WP_REST_Response(
+                [
+                    'message' => 'There was an error with the request. Please try again.',
+                ],
+				403
+            );
+        }
     }
 
 	/**
@@ -569,7 +616,7 @@ class Twilio_Phone_For_WP {
 	private function should_render_phone_tab(): bool {
 	    $is_phone_tab         = isset( $_GET['tab'] ) && 'phone' === sanitize_key( $_GET['tab'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$twilio_connect_info  = get_option( 'twilio_connect_info' );
-	    $twilio_info_complete = $twilio_connect_info && count( $twilio_connect_info ) === 5;
+	    $twilio_info_complete = $twilio_connect_info && count( $twilio_connect_info ) === 6;
 	    $not_settings_tab     = ( isset( $_GET['tab'] ) && 'settings' !== $_GET['tab'] ) || empty( $_GET['tab'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
         return $is_phone_tab || ( $twilio_info_complete && $not_settings_tab );
@@ -609,12 +656,12 @@ class Twilio_Phone_For_WP {
      * @throws RandomException Could theoretically throw an exception if no source of randomness is found.
      */
     private function render_step_one(): void {
-        $account_sid_pic = plugins_url( '/includes/images/account-sid.png', __FILE__ );
+        $account_sid_pic = plugins_url( '/includes/images/account.png', __FILE__ );
         $nonce           = wp_create_nonce( 'twilio_phone_setup_part_one' );
 
         if ( isset( $_POST['twilio-setup-step-one'] ) && 'save' === $_POST['twilio-setup-step-one'] && isset( $_POST['twilio-setup-pt-one-nonce'] ) &&
             wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['twilio-setup-pt-one-nonce'] ) ), 'twilio_phone_setup_part_one' ) &&
-            ! empty( $_POST['account_sid'] ) ) {
+            ! empty( $_POST['account_sid'] ) && ! empty( $_POST['auth-token'] ) ) {
 
             $account_sid = sanitize_text_field( wp_unslash( $_POST['account_sid'] ) );
 
@@ -627,9 +674,21 @@ class Twilio_Phone_For_WP {
                 $connect_info['account_sid'] = $account_sid;
                 update_option( 'twilio_connect_info', $connect_info );
             }
+
+            $auth_token = sanitize_text_field( wp_unslash( $_POST['auth-token'] ) );
+            if ( ! $this::decrypt( $auth_token ) ) {
+                $auth_token   = $this::encrypt( $auth_token );
+                $connect_info = get_option( 'twilio_connect_info' );
+                if ( ! is_array( $connect_info ) ) {
+                    $connect_info = [];
+                }
+                $connect_info['auth_token'] = $auth_token;
+                update_option( 'twilio_connect_info', $connect_info );
+            }
         }
         $connect_info = get_option( 'twilio_connect_info' );
         $account_sid  = $connect_info['account_sid'] ?? '';
+        $auth_token   = $connect_info['auth_token'] ?? '';
         ?>
             <div class="wrap fs-section fs-full-size-wrapper">
                 <h2 class="nav-tab-wrapper" style="display: none;">
@@ -655,6 +714,8 @@ class Twilio_Phone_For_WP {
                         <label for="account_sid" class="twilio-setup-label">Account SID</label>
                         <input id="account_sid" type="password" name="account_sid"
                                                                 value="<?php echo esc_attr( $account_sid ); ?>" required class="twilio-setup-input">
+                        <label for="auth-token">Auth Token</label>
+                        <input id="auth-token" type="password" name="auth-token" value="<?php echo esc_attr( $auth_token ); ?>" required class="twilio-setup-input">
                         <button type="submit" class="twilio-setup-button button" name="twilio-setup-step-one" value="save">Save
                         </button>
                     </form>
@@ -878,7 +939,7 @@ class Twilio_Phone_For_WP {
                     <p class="twilio-setup-instructions">
                         Go to your <a target="_blank" href="https://www.twilio.com/console/phone-numbers/incoming">Twilio account console > Phone Numbers > Manage Numbers > Active Numbers</a>.
                         Select the number you want to use for this plugin. Copy the phone number and paste it into the field below removing spaces but leaving the + sign,
-                        ensuring the number is in <a target="_blank" href="https://www.twilio.com/docs/glossary/what-e164">E.164</a> format. <!--TODO configure #-->
+                        ensuring the number is in <a target="_blank" href="https://www.twilio.com/docs/glossary/what-e164">E.164</a> format. <!--TODO configure # to receive calls-->
                     </p>
                     <div class="twilio-setup-images">
 
@@ -900,7 +961,7 @@ class Twilio_Phone_For_WP {
 	 *
 	 * @return void
 	 */
-	private function render_phone_tab(): void {
+	private function render_phone_tab(): void { // todo add modals to control calls
         ?>
 
         <div class="wrap fs-section fs-full-size-wrapper">
