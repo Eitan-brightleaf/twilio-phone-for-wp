@@ -52,7 +52,7 @@ if ( ! function_exists( 'tpfwp_fs' ) ) {
 							'slug' => 'gravity_ops',
 						),
 					),
-					'navigation'          => 'tabs',
+					'navigation'     => 'tabs',
 				)
                 );
 		}
@@ -67,6 +67,7 @@ if ( ! function_exists( 'tpfwp_fs' ) ) {
 }
 
 define( 'TWILIO_PHONE_FOR_WP_VERSION', '1.0.0' );
+define( 'TWILIO_PHONE_FOR_WP_BASENAME', plugin_basename( __FILE__ ) );
 
 
 /**

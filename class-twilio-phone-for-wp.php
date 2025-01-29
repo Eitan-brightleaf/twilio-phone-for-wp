@@ -84,6 +84,13 @@ class Twilio_Phone_For_WP {
     protected string $settings_url;
 
     /**
+     * The path to the main plugin file.
+     *
+     * @var string $path Path to the main plugin file.
+     */
+    protected string $path = TWILIO_PHONE_FOR_WP_BASENAME;
+
+    /**
      * Initializes the class instance and sets up the settings URL for the admin page.
      * The settings URL is generated dynamically based on the specified slug and admin base URL.
      *
@@ -142,8 +149,24 @@ class Twilio_Phone_For_WP {
 		add_action( 'admin_menu', [ $this, 'add_top_level_menu' ] );
         add_action( 'wp_ajax_get_token', [ $this, 'get_token' ] );
         add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
-        // todo add settings link to plugin pg
+        add_filter( 'plugin_action_links', [ $this, 'plugin_settings_link' ], 10, 2 );
 	}
+
+    /**
+     * Adds a settings link to the plugin's action links on the plugins page.
+     *
+     * @param array  $links Existing action links for the plugin.
+     * @param string $file Path to the plugin file.
+     * @return array Modified list of action links including the settings link.
+     */
+    public function plugin_settings_link( array $links, string $file ): array {
+        if ( $this->path !== $file ) {
+            return $links;
+        }
+        $settings_link = '<a href="' . admin_url( 'admin.php?page=' . $this->slug ) . '">Settings</a>';
+        array_unshift( $links, $settings_link );
+        return $links;
+    }
 
 	/**
 	 * Registers custom REST API routes for the Twilio integration.
@@ -961,7 +984,8 @@ class Twilio_Phone_For_WP {
 	 *
 	 * @return void
 	 */
-	private function render_phone_tab(): void { // todo add modals to control calls
+	private function render_phone_tab(): void {
+		// todo add modals to control calls
         ?>
 
         <div class="wrap fs-section fs-full-size-wrapper">
