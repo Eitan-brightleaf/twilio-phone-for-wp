@@ -1,6 +1,7 @@
 {
   "require": {
-    "twilio/sdk": "8.3.9"
+    "twilio/sdk": "8.3.9",
+    "freemius/wordpress-sdk": ">=2.11.0"
   },
   "extra": {
     "strauss" : {
@@ -8,6 +9,9 @@
       "namespace_prefix": "BrightleafDigital\\TwilioPhoneForWordPress\\",
       "classmap_prefix": "Brightleaf_Digital_Twilio_Phone_For_WordPress_",
       "delete_vendor_files": true,
+      "packages": [
+        "twilio/sdk"
+      ],
       "override_autoload": {
         "twilio/sdk": {
           "classmap": ["."]

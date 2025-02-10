@@ -28,14 +28,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	die;
 }
 
+require_once __DIR__ . '/vendor/autoload.php';
+
 if ( ! function_exists( 'tpfwp_fs' ) ) {
 	// Create a helper function for easy SDK access.
 	function tpfwp_fs() {
 		global $tpfwp_fs;
 
 		if ( ! isset( $tpfwp_fs ) ) {
-			// Include Freemius SDK.
-			require_once __DIR__ . '/freemius/start.php';
 
 			$tpfwp_fs = fs_dynamic_init(
                 array(
