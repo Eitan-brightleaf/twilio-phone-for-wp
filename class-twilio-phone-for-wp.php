@@ -82,6 +82,12 @@ class Twilio_Phone_For_WP {
      * @var string $settings_url The URL used to navigate to the settings page.
      */
     protected string $settings_url;
+	/**
+	 * The URL associated with the Twilio Phone.
+	 *
+	 * @var string $twilio_phone_url URL linked to the Twilio Phone.
+	 */
+	protected string $twilio_phone_url;
 
     /**
      * The path to the main plugin file.
@@ -97,13 +103,20 @@ class Twilio_Phone_For_WP {
      * @return void
      */
     public function __construct() {
-        $this->settings_url = add_query_arg(
+        $this->settings_url     = add_query_arg(
             [
 				'page' => $this->slug,
 				'tab'  => 'settings',
 			],
 			admin_url( 'admin.php' )
-            );
+        );
+        $this->twilio_phone_url = add_query_arg(
+                [
+                    'page' => $this->slug,
+                    'tab'  => 'phone',
+                ],
+				admin_url( 'admin.php' )
+        );
     }
 
 
@@ -148,7 +161,7 @@ class Twilio_Phone_For_WP {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
 		add_action( 'admin_menu', [ $this, 'add_top_level_menu' ] );
         add_action( 'wp_ajax_get_token', [ $this, 'get_token' ] );
-        add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
+        add_action( 'admin_post_nopriv_' . $this->prefix . '_generate_twiml', [ $this, 'generate_twiml' ] );
         add_filter( 'plugin_action_links', [ $this, 'plugin_settings_link' ], 10, 2 );
 	}
 
@@ -168,28 +181,6 @@ class Twilio_Phone_For_WP {
         return $links;
     }
 
-	/**
-	 * Registers custom REST API routes for the Twilio integration.
-	 *
-	 * This method creates a REST route for handling Twilio webhooks. The webhook
-	 * route is configured to accept POST requests and uses a callback function
-	 * to process incoming requests. The route is publicly accessible through the
-	 * specified permission callback.
-	 *
-	 * @return void
-	 */
-	public function register_rest_routes(): void {
-        register_rest_route(
-            'twilio/v1',
-            '/webhook',
-            [
-				'methods'             => 'POST',
-				'callback'            => [ $this, 'handle_twilio_webhook' ],
-				'permission_callback' => '__return_true',
-			]
-        );
-    }
-
     /**
      * Handles incoming Twilio webhook requests.
      *
@@ -203,7 +194,7 @@ class Twilio_Phone_For_WP {
      * @return WP_REST_Response|void A WP_REST_Response object with an appropriate HTTP response and
      *                               message on failure, or void for valid XML-based responses.
      */
-    public function handle_twilio_webhook( WP_REST_Request $request ) {
+    public function generate_twiml( WP_REST_Request $request ) {
         $posted_to          = sanitize_text_field( $request->get_param( 'To' ) );
         $posted_app_sid     = sanitize_text_field( $request->get_param( 'ApplicationSid' ) );
         $posted_account_sid = sanitize_text_field( $request->get_param( 'AccountSid' ) );
@@ -249,6 +240,7 @@ class Twilio_Phone_For_WP {
             }
             header( 'Content-Type: text/xml' );
             echo $response;
+            exit();
         } else {
             return new WP_REST_Response(
                 [
@@ -716,7 +708,7 @@ class Twilio_Phone_For_WP {
             <div class="wrap fs-section fs-full-size-wrapper">
                 <h2 class="nav-tab-wrapper" style="display: none;">
                     <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
-                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                    <a href="<?php echo esc_url( $this->twilio_phone_url ); ?>" class='nav-tab fs-tab'>Twilio Phone</a>
                 </h2>
                 <div class="twilio-setup-section-content">
                     <h1>Twilio Account SID</h1>
@@ -796,7 +788,7 @@ class Twilio_Phone_For_WP {
             <div class="wrap fs-section fs-full-size-wrapper">
                 <h2 class="nav-tab-wrapper" style="display: none;">
                     <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
-                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                    <a href="<?php echo esc_url( $this->twilio_phone_url ); ?>" class='nav-tab fs-tab'>Twilio Phone</a>
                 </h2>
                 <div class="twilio-setup-section-content">
                     <h1>Enter API Info</h1>
@@ -873,7 +865,7 @@ class Twilio_Phone_For_WP {
             <div class="wrap fs-section fs-full-size-wrapper">
                 <h2 class="nav-tab-wrapper" style="display: none;">
                     <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
-                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                    <a href="<?php echo esc_url( $this->twilio_phone_url ); ?>" class='nav-tab fs-tab'>Twilio Phone</a>
                 </h2>
                 <div class="twilio-setup-section-content">
                     <h1>Enter App SID</h1>
@@ -949,7 +941,7 @@ class Twilio_Phone_For_WP {
             <div class="wrap fs-section fs-full-size-wrapper">
                 <h2 class="nav-tab-wrapper" style="display: none;">
                     <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab nav-tab-active home'>Settings</a>
-                    <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab fs-tab'>Twilio Phone</a>
+                    <a href="<?php echo esc_url( $this->twilio_phone_url ); ?>" class='nav-tab fs-tab'>Twilio Phone</a>
                 </h2>
                 <div class="twilio-setup-section-content">
                     <h1>Enter Twilio Phone Number</h1>
@@ -991,7 +983,7 @@ class Twilio_Phone_For_WP {
         <div class="wrap fs-section fs-full-size-wrapper">
             <h2 class="nav-tab-wrapper" style="display: none;">
                 <a href="<?php echo esc_url( $this->settings_url ); ?>" class='nav-tab fs-tab home'>Settings</a>
-                <a href="<?php echo esc_url( $this->settings_url ); ?>&tab=phone" class='nav-tab nav-tab-active fs-tab'>Twilio Phone</a>
+                <a href="<?php echo esc_url( $this->twilio_phone_url ); ?>" class='nav-tab nav-tab-active fs-tab'>Twilio Phone</a>
             </h2>
             <div class="twilio-phone-dialer">
                 <!-- Text field on top of the dial pad -->
