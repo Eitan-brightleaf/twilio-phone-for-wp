@@ -19,11 +19,6 @@
       }
     }
   },
-  "autoload": {
-    "classmap": [
-      "vendor/"
-    ]
-  },
   "scripts": {
     "prefix-namespaces": [
       "if not exist bin\\strauss.phar curl -o bin\\strauss.phar -L https://github.com/BrianHenryIE/strauss/releases/latest/download/strauss.phar",
