@@ -239,7 +239,7 @@ class Twilio_Phone_For_WP {
                 $response->dial( $posted_to, [ 'callerId' => $caller_id ] );
             }
             header( 'Content-Type: text/xml' );
-            echo $response;
+            echo esc_xml( $response );
             exit();
         } else {
             return new WP_REST_Response(
