@@ -426,8 +426,8 @@ class Twilio_Phone_For_WP {
                 $this->prefix . '_twilio_phone',
                 sprintf(
 	                'const dialpadAjax = { ajax_url: "%s", security: "%s" };',
-	                admin_url( 'admin-ajax.php' ),
-	                wp_create_nonce( 'get_token_nonce' )
+	                esc_url_raw( admin_url( 'admin-ajax.php' ) ),
+	                wp_json_encode( wp_create_nonce( 'get_token_nonce' ) )
                 ),
                 'before'
             );
