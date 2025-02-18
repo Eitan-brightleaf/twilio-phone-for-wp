@@ -181,26 +181,14 @@ class Twilio_Phone_For_WP {
         return $links;
     }
 
-    /**
-     * Handles incoming Twilio webhook requests.
-     *
-     * This method processes POST requests sent to the Twilio webhook endpoint. It validates
-     * the request against Twilio's signature, checks necessary parameters, and invokes proper
-     * Twilio Voice functionalities such as dialing or responding based on the request data.
-     * If validation fails, an appropriate REST response is returned with a 403 status code.
-     *
-     * @param WP_REST_Request $request The REST API request object containing parameters and headers
-     *                                 sent by the Twilio webhook.
-     * @return WP_REST_Response|void A WP_REST_Response object with an appropriate HTTP response and
-     *                               message on failure, or void for valid XML-based responses.
-     */
-    public function generate_twiml( WP_REST_Request $request ) {
-        $posted_to          = sanitize_text_field( $request->get_param( 'To' ) );
-        $posted_app_sid     = sanitize_text_field( $request->get_param( 'ApplicationSid' ) );
-        $posted_account_sid = sanitize_text_field( $request->get_param( 'AccountSid' ) );
-        $posted_from        = sanitize_text_field( $request->get_param( 'From' ) );
-        $headers            = $request->get_headers();
-        $twilio_signature   = $headers['x_twilio_signature'][0] ?? null;
+	public function generate_twiml() {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing
+        $posted_to          = isset( $_POST['To'] ) ? sanitize_text_field( wp_unslash( $_POST['To'] ) ) : '';
+        $posted_app_sid     = isset( $_POST['ApplicationSid'] ) ? sanitize_text_field( wp_unslash( $_POST['ApplicationSid'] ) ) : '';
+        $posted_account_sid = isset( $_POST['AccountSid'] ) ? sanitize_text_field( wp_unslash( $_POST['AccountSid'] ) ) : '';
+        $posted_from        = isset( $_POST['From'] ) ? sanitize_text_field( wp_unslash( $_POST['From'] ) ) : '';
+
+        $twilio_signature = $headers['x_twilio_signature'][0] ?? null;
 
         $connect_info = get_option( 'twilio_connect_info' );
         $phone_number = sanitize_text_field( $connect_info['phone_number'] ) ?? null;
@@ -208,9 +196,9 @@ class Twilio_Phone_For_WP {
 
         $validator = new RequestValidator( $auth_token );
 
-        $url = 'https://dc30-2a06-c701-4f19-600-9890-ef8e-8f56-da3d.ngrok-free.app/brightleaf/wp-json/twilio/v1/webhook'; // todo replace with home_url( 'wp-json/twilio/v1/webhook' );
+        $url = 'https://dc30-2a06-c701-4f19-600-9890-ef8e-8f56-da3d.ngrok-free.app/brightleaf/wp-json/twilio/v1/webhook'; // todo replace with home_url( 'wp-admin/admin-post.php' );
 
-        $post_data = $request->get_body_params();
+        $post_data = $_POST;
 
         if ( ! $validator->validate( $twilio_signature, $url, $post_data ) ) {
 
@@ -235,7 +223,7 @@ class Twilio_Phone_For_WP {
             if ( $posted_to !== $phone_number ) {
                 $response->dial( $posted_to, [ 'callerId' => $phone_number ] );
             } else {
-                $caller_id = sanitize_text_field( $request->get_param( 'Caller' ) );
+                $caller_id = isset( $_POST['Caller'] ) ? sanitize_text_field( wp_unslash( $_POST['Caller'] ) ) : $phone_number;
                 $response->dial( $posted_to, [ 'callerId' => $caller_id ] );
             }
             header( 'Content-Type: text/xml' );
@@ -249,6 +237,7 @@ class Twilio_Phone_For_WP {
 				403
             );
         }
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
     }
 
 	/**
