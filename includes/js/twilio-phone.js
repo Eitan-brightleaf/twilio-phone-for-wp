@@ -1,4 +1,4 @@
-jQuery(
+ jQuery(
     ($) => {
         let device;
         $.post(
