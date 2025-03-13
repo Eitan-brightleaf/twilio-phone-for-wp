@@ -1,4 +1,4 @@
-/*! @twilio/voice-sdk.js 2.12.2
+/*! @twilio/voice-sdk.js 2.12.4
 
 The following license applies to all parts of this software except as
 documented below.
@@ -642,10 +642,8 @@ var AudioHelper = /** @class */ (function (_super) {
      * @private
      */
     AudioHelper.prototype._unbind = function () {
-        if (!this._mediaDevices || !this._enumerateDevices) {
-            throw new errors_1.NotSupportedError('Enumeration is not supported');
-        }
-        if (this._mediaDevices.removeEventListener) {
+        var _a;
+        if ((_a = this._mediaDevices) === null || _a === void 0 ? void 0 : _a.removeEventListener) {
             this._mediaDevices.removeEventListener('devicechange', this._updateAvailableDevices);
         }
     };
@@ -2002,7 +2000,7 @@ var Call = /** @class */ (function (_super) {
                 var errorConstructor = errors_1.getPreciseSignalingErrorByCode(_this._options.enableImprovedSignalingErrorPrecision, code);
                 var error = typeof errorConstructor !== 'undefined'
                     ? new errorConstructor(payload.error.message)
-                    : new errors_1.GeneralErrors.ConnectionError('Error sent from gateway in HANGUP');
+                    : new errors_1.GeneralErrors.ConnectionError('Error sent from gateway in HANGUP', payload.error);
                 _this._log.error('Received an error from the gateway:', error);
                 _this._log.debug('#error', error);
                 _this.emit('error', error);
@@ -3110,7 +3108,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SOUNDS_BASE_URL = exports.RELEASE_VERSION = exports.PACKAGE_NAME = exports.ECHO_TEST_DURATION = exports.COWBELL_AUDIO_URL = void 0;
 var PACKAGE_NAME = '@twilio/voice-sdk';
 exports.PACKAGE_NAME = PACKAGE_NAME;
-var RELEASE_VERSION = '2.12.2';
+var RELEASE_VERSION = '2.12.4';
 exports.RELEASE_VERSION = RELEASE_VERSION;
 var SOUNDS_BASE_URL = 'https://sdk.twilio.com/js/client/sounds/releases/1.0.0';
 exports.SOUNDS_BASE_URL = SOUNDS_BASE_URL;
@@ -3892,9 +3890,9 @@ var Device = /** @class */ (function (_super) {
         this.disconnectAll();
         this._stopRegistrationTimer();
         this._destroyStream();
-        this._destroyPublisher();
         this._destroyAudioHelper();
         (_a = this._audioProcessorEventObserver) === null || _a === void 0 ? void 0 : _a.destroy();
+        this._destroyPublisher();
         if (this._networkInformation && typeof this._networkInformation.removeEventListener === 'function') {
             this._networkInformation.removeEventListener('change', this._publishNetworkChange);
         }
@@ -6905,8 +6903,10 @@ var PreflightTest = /** @class */ (function (_super) {
         var _this = this;
         try {
             this._device = new (options.deviceFactory || device_1.default)(token, {
+                chunderw: options.chunderw,
                 codecPreferences: options.codecPreferences,
                 edge: options.edge,
+                eventgw: options.eventgw,
                 fileInputStream: options.fileInputStream,
                 logLevel: options.logLevel,
                 preflight: true,
