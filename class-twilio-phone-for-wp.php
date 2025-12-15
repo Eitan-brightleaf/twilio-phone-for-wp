@@ -159,7 +159,7 @@ class Twilio_Phone_For_WP {
 	 */
 	private function init_admin(): void {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
-		add_action( 'admin_menu', [ $this, 'add_top_level_menu' ] );
+		// add_action( 'admin_menu', [ $this, 'add_top_level_menu' ] );
         add_action( 'wp_ajax_get_token', [ $this, 'get_token' ] );
         add_action( 'admin_post_nopriv_' . $this->prefix . '_generate_twiml', [ $this, 'generate_twiml' ] );
         add_filter( 'plugin_action_links', [ $this, 'plugin_settings_link' ], 10, 2 );
